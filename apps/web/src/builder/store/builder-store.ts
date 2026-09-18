@@ -1,20 +1,42 @@
-import type { FormDocument } from "@formcraft/schema";
+import type { FormDocument, FormElement, Geometry } from "@formcraft/schema";
 
+import type { Guide } from "../geometry/snapping";
+import type { Rect } from "../geometry/transform";
+import { ZOOM_LEVELS } from "../geometry/viewport";
 import { CommandStack } from "./command-stack";
 import type { Command } from "./commands";
 
-/** A live, uncommitted gesture. Never part of the document, never undoable. */
-export interface DragState {
-  readonly ids: readonly string[];
-  /** Displacement in page units, applied as a CSS transform. */
-  readonly offset: { readonly dx: number; readonly dy: number };
-}
+/**
+ * A gesture in progress.
+ *
+ * One field rather than several, so a pointer frame produces exactly one state
+ * update and one render pass. Never part of the document, never undoable — the
+ * document is written once, when the gesture ends.
+ */
+export type Gesture =
+  | {
+      kind: "move";
+      ids: readonly string[];
+      offset: { dx: number; dy: number };
+      guides: readonly Guide[];
+    }
+  | {
+      kind: "transform";
+      id: string;
+      geometry: Geometry;
+      guides: readonly Guide[];
+    }
+  | { kind: "marquee"; rect: Rect }
+  | null;
 
 export interface BuilderState {
   readonly document: FormDocument;
   readonly selection: readonly string[];
   readonly activePageId: string;
-  readonly drag: DragState | null;
+  readonly gesture: Gesture;
+  readonly clipboard: readonly FormElement[];
+  readonly scale: number;
+  readonly snapEnabled: boolean;
   readonly canUndo: boolean;
   readonly canRedo: boolean;
   readonly undoLabel: string | null;
@@ -23,21 +45,15 @@ export interface BuilderState {
 
 type Listener = () => void;
 
+const NO_GUIDES: readonly Guide[] = [];
+
 /**
  * The builder's state, outside React.
  *
- * Deliberately hand-rolled on `useSyncExternalStore` rather than reaching for a
- * state library. Two reasons. It is about eighty lines, so a dependency would
- * be buying very little. And the interesting behaviour here is the command
- * stack, which no store library provides — it would have to be written either
- * way.
- *
- * The critical property is **selector subscriptions**: a component can watch
- * one element and re-render only when that element changes. Combined with the
- * structural sharing the schema's operations guarantee, dragging one element
- * re-renders one element, not the page. Context alone would re-render every
- * consumer on every change, which is exactly the 60fps the quality bar asks
- * for, spent.
+ * Hand-rolled on `useSyncExternalStore` rather than a state library: it is
+ * small, and the interesting part — the command stack — is not something a
+ * store library provides. Selector subscriptions are the point, so that
+ * dragging one element re-renders one element rather than the page.
  */
 export class BuilderStore {
   private state: BuilderState;
@@ -49,7 +65,10 @@ export class BuilderStore {
       document,
       selection: [],
       activePageId: document.pages[0]?.id ?? "",
-      drag: null,
+      gesture: null,
+      clipboard: [],
+      scale: 1,
+      snapEnabled: true,
       canUndo: false,
       canRedo: false,
       undoLabel: null,
@@ -71,7 +90,6 @@ export class BuilderStore {
     for (const listener of this.listeners) listener();
   }
 
-  /** Mirrors the command stack's flags into state so the UI can subscribe. */
   private historyFlags() {
     return {
       canUndo: this.commands.canUndo,
@@ -79,6 +97,12 @@ export class BuilderStore {
       undoLabel: this.commands.undoLabel,
       redoLabel: this.commands.redoLabel,
     };
+  }
+
+  private get activePage() {
+    return this.state.document.pages.find(
+      (page) => page.id === this.state.activePageId,
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -111,11 +135,8 @@ export class BuilderStore {
   }
 
   /**
-   * Replaces the whole document and drops history.
-   *
-   * Used for loading a draft or the sample. History is cleared because undoing
-   * *past* a document swap would resurrect edits that belong to a document the
-   * user is no longer looking at.
+   * Replaces the whole document and drops history. Undoing past a document
+   * swap would resurrect edits belonging to a document nobody is looking at.
    */
   replaceDocument(document: FormDocument): void {
     this.commands.clear();
@@ -123,7 +144,7 @@ export class BuilderStore {
       document,
       selection: [],
       activePageId: document.pages[0]?.id ?? "",
-      drag: null,
+      gesture: null,
       ...this.historyFlags(),
     });
   }
@@ -137,26 +158,117 @@ export class BuilderStore {
     this.set({ selection: [...ids] });
   }
 
+  /** Shift-click: adds an element to the selection, or removes it if present. */
+  toggleSelection(id: string): void {
+    const { selection } = this.state;
+    this.select(
+      selection.includes(id)
+        ? selection.filter((candidate) => candidate !== id)
+        : [...selection, id],
+    );
+  }
+
+  selectAll(): void {
+    this.select(this.activePage?.elements.map((element) => element.id) ?? []);
+  }
+
   clearSelection(): void {
     this.select([]);
   }
 
   setActivePage(pageId: string): void {
     if (pageId === this.state.activePageId) return;
-    this.set({ activePageId: pageId });
+    this.set({ activePageId: pageId, selection: [] });
+  }
+
+  /** The selected elements, in document order. */
+  selectedElements(): FormElement[] {
+    const selected = new Set(this.state.selection);
+    return (this.activePage?.elements ?? []).filter((element) =>
+      selected.has(element.id),
+    );
   }
 
   // -------------------------------------------------------------------------
-  // Dragging
+  // Gestures
+  // -------------------------------------------------------------------------
+
+  setGesture(gesture: Gesture): void {
+    if (gesture === null && this.state.gesture === null) return;
+    this.set({ gesture });
+  }
+
+  setMove(
+    ids: readonly string[],
+    offset: { dx: number; dy: number },
+    guides: readonly Guide[] = NO_GUIDES,
+  ): void {
+    this.setGesture({ kind: "move", ids, offset, guides });
+  }
+
+  setTransform(
+    id: string,
+    geometry: Geometry,
+    guides: readonly Guide[] = NO_GUIDES,
+  ): void {
+    this.setGesture({ kind: "transform", id, geometry, guides });
+  }
+
+  setMarquee(rect: Rect | null): void {
+    this.setGesture(rect ? { kind: "marquee", rect } : null);
+  }
+
+  // -------------------------------------------------------------------------
+  // Clipboard
   // -------------------------------------------------------------------------
 
   /**
-   * Updates the live gesture. Called on every pointer frame, and deliberately
-   * touches nothing but `drag` — the document is written once, on commit.
+   * An in-memory clipboard, not the system one.
+   *
+   * The system clipboard would allow pasting between tabs, but needs async
+   * permissions and a serialisation format that anything else could paste
+   * into. Worth doing later; not worth blocking the gesture work on.
    */
-  setDrag(drag: DragState | null): void {
-    if (drag === null && this.state.drag === null) return;
-    this.set({ drag });
+  copy(): void {
+    const elements = this.selectedElements();
+    if (elements.length === 0) return;
+    this.set({ clipboard: elements });
+  }
+
+  setClipboard(elements: readonly FormElement[]): void {
+    this.set({ clipboard: elements });
+  }
+
+  // -------------------------------------------------------------------------
+  // Viewport
+  // -------------------------------------------------------------------------
+
+  setScale(scale: number): void {
+    const clamped = Math.min(
+      ZOOM_LEVELS[ZOOM_LEVELS.length - 1]!,
+      Math.max(ZOOM_LEVELS[0]!, scale),
+    );
+    if (clamped === this.state.scale) return;
+    this.set({ scale: clamped });
+  }
+
+  zoomBy(steps: number): void {
+    const levels = [...ZOOM_LEVELS];
+    // Snap to the nearest listed level first, so zooming from an arbitrary
+    // fit-to-window scale lands on a predictable one.
+    const nearest = levels.reduce((best, level) =>
+      Math.abs(level - this.state.scale) < Math.abs(best - this.state.scale)
+        ? level
+        : best,
+    );
+    const index = levels.indexOf(nearest);
+    this.setScale(
+      levels[Math.min(levels.length - 1, Math.max(0, index + steps))]!,
+    );
+  }
+
+  toggleSnap(): void {
+    this.set({ snapEnabled: !this.state.snapEnabled });
   }
 }
 

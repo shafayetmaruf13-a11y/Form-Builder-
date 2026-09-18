@@ -10,10 +10,11 @@ build plan. Read it before changing anything structural.
 
 ## Status
 
-**Slice 2a — the builder's skeleton.** `/builder` gives you a palette, a canvas
-and undo. Drag a field onto the page, move it, delete it, undo it. Resize,
-rotate, multi-select, snapping and z-order come in 2b; the properties panel,
-multi-page and logo upload in 2c.
+**Slice 2b — the builder's gestures.** `/builder` gives you a palette, a canvas
+and the editing surface: drag to create, move, resize, rotate, multi-select,
+marquee, restack, nudge, duplicate, copy/paste, snapping with alignment guides,
+zoom and pan — all undoable. The properties panel, multi-page and logo upload
+come in 2c.
 
 Behind it: `packages/schema` defines what a form document is (Slice 1), and
 `<FormRenderer />` draws one — the builder reuses that renderer rather than
@@ -87,6 +88,23 @@ packages/schema/               the form document schema and pure document
                                operations — shared by builder, renderer, PDF
                                worker and API
 ```
+
+### Builder shortcuts
+
+Figma conventions where they overlap. `⌘` is `Ctrl` on Windows and Linux.
+
+|                                |                                                                   |
+| ------------------------------ | ----------------------------------------------------------------- |
+| Move / extend selection        | drag · shift-click · marquee on empty canvas                      |
+| Select all / deselect          | `⌘A` · `Esc`                                                      |
+| Nudge                          | arrows (1 unit) · `⇧`+arrows (10)                                 |
+| Undo / redo                    | `⌘Z` · `⌘⇧Z`                                                      |
+| Copy / cut / paste / duplicate | `⌘C` · `⌘X` · `⌘V` · `⌘D`                                         |
+| Delete                         | `⌫`                                                               |
+| Restack                        | `⌘]` `⌘[` one step · `⌘⇧]` `⌘⇧[` front/back                       |
+| Zoom                           | `⌘+` `⌘−` · `⌘0` for 100% · `⌘`+scroll                            |
+| Pan                            | hold space and drag                                               |
+| Constrain                      | `⇧` while resizing keeps proportions, while rotating snaps to 15° |
 
 ### The other rule worth knowing before you touch the builder
 

@@ -166,6 +166,213 @@ export function translateElements(
   return changed ? { ...document, pages } : document;
 }
 
+/** Geometry an element can be moved, resized or rotated to. */
+export interface Geometry {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  rotation: number;
+}
+
+/** Sets one element's geometry outright. Used by resize and rotate. */
+export function setElementGeometry(
+  document: FormDocument,
+  id: string,
+  geometry: Geometry,
+): FormDocument {
+  let changed = false;
+
+  const pages = document.pages.map((page) => {
+    let pageChanged = false;
+
+    const elements = page.elements.map((element) => {
+      if (element.id !== id) return element;
+      if (
+        element.x === geometry.x &&
+        element.y === geometry.y &&
+        element.w === geometry.w &&
+        element.h === geometry.h &&
+        element.rotation === geometry.rotation
+      ) {
+        return element;
+      }
+      pageChanged = true;
+      return { ...element, ...geometry };
+    });
+
+    if (!pageChanged) return page;
+    changed = true;
+    return { ...page, elements };
+  });
+
+  return changed ? { ...document, pages } : document;
+}
+
+export type ZDirection = "front" | "back" | "forward" | "backward";
+
+/**
+ * Restacks elements within their page.
+ *
+ * `z` is rewritten as a dense 0..n-1 sequence afterwards. Sparse or duplicate
+ * z values render unpredictably — paint order would fall back to document
+ * order for ties — so normalising keeps "what you see" and "what is stored"
+ * the same thing. This rewrites every element on the page, which is fine:
+ * restacking is a discrete action, not something that happens per frame.
+ */
+export function reorderZ(
+  document: FormDocument,
+  ids: readonly string[],
+  direction: ZDirection,
+): FormDocument {
+  if (ids.length === 0) return document;
+  const moving = new Set(ids);
+  let changed = false;
+
+  const pages = document.pages.map((page) => {
+    if (!page.elements.some((element) => moving.has(element.id))) return page;
+
+    // Current paint order: by z, ties broken by document order.
+    const order = page.elements
+      .map((element, index) => ({ element, index }))
+      .sort((a, b) => a.element.z - b.element.z || a.index - b.index)
+      .map((entry) => entry.element);
+
+    const next = restack(order, moving, direction);
+    if (next.every((element, index) => element === order[index])) return page;
+
+    changed = true;
+    return {
+      ...page,
+      elements: next.map((element, index) =>
+        element.z === index ? element : { ...element, z: index },
+      ),
+    };
+  });
+
+  return changed ? { ...document, pages } : document;
+}
+
+function restack(
+  order: readonly FormElement[],
+  moving: ReadonlySet<string>,
+  direction: ZDirection,
+): FormElement[] {
+  const selected = order.filter((element) => moving.has(element.id));
+  const rest = order.filter((element) => !moving.has(element.id));
+
+  if (direction === "front") return [...rest, ...selected];
+  if (direction === "back") return [...selected, ...rest];
+
+  const next = [...order];
+
+  if (direction === "forward") {
+    // Walk from the top so a contiguous block shifts as one and cannot
+    // overtake itself.
+    for (let i = next.length - 2; i >= 0; i--) {
+      const current = next[i]!;
+      const above = next[i + 1]!;
+      if (moving.has(current.id) && !moving.has(above.id)) {
+        next[i] = above;
+        next[i + 1] = current;
+      }
+    }
+    return next;
+  }
+
+  for (let i = 1; i < next.length; i++) {
+    const current = next[i]!;
+    const below = next[i - 1]!;
+    if (moving.has(current.id) && !moving.has(below.id)) {
+      next[i] = below;
+      next[i - 1] = current;
+    }
+  }
+  return next;
+}
+
+/**
+ * Restores explicit z values.
+ *
+ * Undoing a restack cannot be "apply the opposite direction" — bring-to-front
+ * has no single inverse move — so the command captures every z before the
+ * change and puts them back through this.
+ */
+export function setZValues(
+  document: FormDocument,
+  zByElementId: ReadonlyMap<string, number>,
+): FormDocument {
+  if (zByElementId.size === 0) return document;
+  let changed = false;
+
+  const pages = document.pages.map((page) => {
+    let pageChanged = false;
+
+    const elements = page.elements.map((element) => {
+      const z = zByElementId.get(element.id);
+      if (z === undefined || z === element.z) return element;
+      pageChanged = true;
+      return { ...element, z };
+    });
+
+    if (!pageChanged) return page;
+    changed = true;
+    return { ...page, elements };
+  });
+
+  return changed ? { ...document, pages } : document;
+}
+
+/** Every element's current z, for a later `setZValues`. */
+export function captureZValues(document: FormDocument): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const page of document.pages) {
+    for (const element of page.elements) map.set(element.id, element.z);
+  }
+  return map;
+}
+
+/** Appends elements to a page, e.g. a paste or a duplicate. */
+export function insertElements(
+  document: FormDocument,
+  pageId: string,
+  elements: readonly FormElement[],
+): FormDocument {
+  if (elements.length === 0) return document;
+
+  return replacePage(document, pageId, (page) => ({
+    ...page,
+    elements: [...page.elements, ...elements],
+  }));
+}
+
+/**
+ * Copies elements with fresh ids, nudged by an offset.
+ *
+ * New ids are supplied rather than generated (architecture rule 3 wants
+ * nanoids, but a function that mints its own is untestable). Ids are consumed
+ * in the order the elements appear in the document, not the order the caller
+ * listed them.
+ */
+export function duplicateElements(
+  document: FormDocument,
+  ids: readonly string[],
+  newIds: readonly string[],
+  offset: { dx: number; dy: number },
+): FormElement[] {
+  const wanted = new Set(ids);
+  const source = document.pages.flatMap((page) =>
+    page.elements.filter((element) => wanted.has(element.id)),
+  );
+
+  return source.map((element, index) => ({
+    ...element,
+    id: newIds[index] ?? `${element.id}_copy${index}`,
+    x: element.x + offset.dx,
+    y: element.y + offset.dy,
+  }));
+}
+
 /** Finds an element anywhere in the document. */
 export function findElement(
   document: FormDocument,

@@ -241,3 +241,33 @@ decided and why.
 - **2026-09-18 — localStorage draft is a deliberate stopgap.** The quality bar
   says nothing is ever lost, but server persistence is Slice 3. Slice 3 replaces
   `persistence/use-draft.ts` wholesale.
+- **2026-09-18 — Resizing a rotated element pins the corner opposite the
+  handle.** An element rotates about its centre, so changing its width moves
+  that centre and with it every corner — including the one the user is holding
+  still. `resizeRect` rotates the pointer delta into the element's own frame,
+  computes where the anchor was in page space, and derives the new centre that
+  puts it back. A property test asserts the anchor does not move, across seven
+  rotations and every corner handle. This is the classic canvas-editor bug and
+  it is not obvious from reading the code, so do not "simplify" it.
+- **2026-09-18 — Grid snapping a resize touches only the dragged edges.**
+  Snapping all four would shift the anchored corner. A rotated element is not
+  grid-snapped at all: the grid is axis-aligned and a rotated box has no
+  axis-aligned edges, so snapping its bounding box would silently change its
+  size.
+- **2026-09-18 — Alignment guides beat the grid.** Lining up with a neighbour is
+  what the designer was aiming at; the grid only takes over on an axis where
+  nothing was near enough. Guides are move-only so far — snapping a dragged
+  _edge_ to a neighbour's edge during a resize is a separate computation.
+- **2026-09-18 — Snap candidates are collected once per gesture,** not per
+  frame. With a hundred elements, recomputing every edge each frame is the
+  difference between a smooth drag and a janky one.
+- **2026-09-18 — Handles exist only for a single selection.** Resizing several
+  elements at once means deciding how each scales within the group, which is its
+  own piece of work. Multiple selections move, nudge, restack, copy and delete.
+- **2026-09-18 — The clipboard is in-memory, not the system clipboard.** Cross-
+  tab paste needs async permissions and a format anything else could paste into.
+  Worth doing; not worth blocking the gesture work on.
+- **2026-09-18 — Panning is scrolling.** The page sits in an overflow container
+  and space-drag moves its scroll position. A separate pan transform would be a
+  second way for the page to be positioned, and the architecture rests on there
+  being one.

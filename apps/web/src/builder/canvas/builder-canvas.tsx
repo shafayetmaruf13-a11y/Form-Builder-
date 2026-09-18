@@ -6,7 +6,7 @@ import type { RefObject } from "react";
 
 import { PageSurface } from "@/components/renderer/page-surface";
 
-import { useBuilderStore } from "../store/use-builder";
+import { useScale } from "../store/use-builder";
 import { BuilderElement } from "./builder-element";
 import { InteractionLayer } from "./interaction-layer";
 
@@ -22,15 +22,13 @@ export const CANVAS_DROPPABLE_ID = "builder-canvas";
  */
 export function BuilderCanvas({
   page,
-  scale,
   pageRef,
 }: {
   page: Page;
-  scale: number;
-  /** Measured at drop time to convert a pointer position into page units. */
+  /** Measured during gestures to convert pointer positions into page units. */
   pageRef: RefObject<HTMLDivElement | null>;
 }) {
-  const store = useBuilderStore();
+  const scale = useScale();
   const { setNodeRef } = useDroppable({ id: CANVAS_DROPPABLE_ID });
 
   return (
@@ -53,13 +51,7 @@ export function BuilderCanvas({
           />
         </div>
 
-        <InteractionLayer
-          page={page}
-          scale={scale}
-          onBackgroundPointerDown={() => {
-            store.clearSelection();
-          }}
-        />
+        <InteractionLayer page={page} pageRef={pageRef} />
       </div>
     </div>
   );

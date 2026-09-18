@@ -2,10 +2,17 @@ import {
   type ElementLocation,
   type FormDocument,
   type FormElement,
+  type Geometry,
+  type ZDirection,
   addElement,
+  captureZValues,
   elementLocations,
+  insertElements,
   removeElements,
+  reorderZ,
   restoreElements,
+  setElementGeometry,
+  setZValues,
   translateElements,
 } from "@formcraft/schema";
 
@@ -103,5 +110,73 @@ export function moveElementsCommand(
       // Translation composes, so the merged command is just the summed delta.
       return moveElementsCommand(ids, dx + next.dx, dy + next.dy);
     },
+  };
+}
+
+/**
+ * Sets one element's geometry, for a resize or a rotate.
+ *
+ * Both the before and after are passed in rather than read from the document,
+ * because the gesture already knows where it started — and reading "before"
+ * at commit time would capture the geometry *after* the change on a redo.
+ */
+export function setGeometryCommand(
+  id: string,
+  before: Geometry,
+  after: Geometry,
+  label = "Resize",
+): Command {
+  return {
+    label,
+    // Resizes commit once per gesture, so there is nothing to merge.
+    mergeKey: null,
+    redo: (document) => setElementGeometry(document, id, after),
+    undo: (document) => setElementGeometry(document, id, before),
+  };
+}
+
+/**
+ * Restacks elements.
+ *
+ * Undo restores every z value captured beforehand rather than applying an
+ * opposite direction — "bring to front" has no single inverse move, and after
+ * normalisation the old values are the only faithful record of what the
+ * stacking was.
+ */
+export function reorderZCommand(
+  document: FormDocument,
+  ids: readonly string[],
+  direction: ZDirection,
+): Command {
+  const before = captureZValues(document);
+
+  const labels: Record<ZDirection, string> = {
+    front: "Bring to front",
+    back: "Send to back",
+    forward: "Bring forward",
+    backward: "Send backward",
+  };
+
+  return {
+    label: labels[direction],
+    mergeKey: null,
+    redo: (current) => reorderZ(current, ids, direction),
+    undo: (current) => setZValues(current, before),
+  };
+}
+
+/** Adds elements to a page, for paste and duplicate. */
+export function insertElementsCommand(
+  pageId: string,
+  elements: readonly FormElement[],
+  label: string,
+): Command {
+  const ids = elements.map((element) => element.id);
+
+  return {
+    label,
+    mergeKey: null,
+    redo: (document) => insertElements(document, pageId, elements),
+    undo: (document) => removeElements(document, ids),
   };
 }

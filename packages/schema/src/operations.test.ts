@@ -5,11 +5,15 @@ import { SCHEMA_VERSION, formDocumentSchema } from "./document";
 import { ELEMENT_TYPES } from "./elements";
 import {
   addElement,
+  duplicateElements,
   elementLocations,
   findElement,
+  insertElements,
   pageIdOfElement,
   removeElements,
+  reorderZ,
   restoreElements,
+  setElementGeometry,
   translateElements,
 } from "./operations";
 
@@ -242,6 +246,187 @@ describe("translate", () => {
     const once = translateElements(before, ["el_a"], 5, 5);
 
     expect(twice).toEqual(once);
+  });
+});
+
+describe("z-order", () => {
+  /** Ids in paint order, bottom first. */
+  function order(document: ReturnType<typeof doc>) {
+    const page = document.pages[0]!;
+    return [...page.elements]
+      .sort((a, b) => a.z - b.z)
+      .map((element) => element.id);
+  }
+
+  function stacked(ids: string[]) {
+    return formDocumentSchema.parse({
+      schemaVersion: SCHEMA_VERSION,
+      id: "doc_1",
+      title: "Test",
+      pages: [
+        {
+          id: "page_1",
+          elements: ids.map((id, index) =>
+            createElement("text", id, { x: 0, y: 0, z: index }),
+          ),
+        },
+      ],
+    });
+  }
+
+  it("brings to front and sends to back", () => {
+    const before = stacked(["a", "b", "c"]);
+
+    expect(order(reorderZ(before, ["a"], "front"))).toEqual(["b", "c", "a"]);
+    expect(order(reorderZ(before, ["c"], "back"))).toEqual(["c", "a", "b"]);
+  });
+
+  it("steps one place forward and backward", () => {
+    const before = stacked(["a", "b", "c"]);
+
+    expect(order(reorderZ(before, ["a"], "forward"))).toEqual(["b", "a", "c"]);
+    expect(order(reorderZ(before, ["c"], "backward"))).toEqual(["a", "c", "b"]);
+  });
+
+  it("does nothing at the ends", () => {
+    const before = stacked(["a", "b", "c"]);
+
+    expect(reorderZ(before, ["c"], "forward")).toBe(before);
+    expect(reorderZ(before, ["a"], "backward")).toBe(before);
+  });
+
+  it("moves a contiguous block as one, keeping its internal order", () => {
+    const before = stacked(["a", "b", "c", "d"]);
+
+    expect(order(reorderZ(before, ["a", "b"], "forward"))).toEqual([
+      "c",
+      "a",
+      "b",
+      "d",
+    ]);
+  });
+
+  it("keeps the selection's relative order when brought to front", () => {
+    const before = stacked(["a", "b", "c", "d"]);
+
+    expect(order(reorderZ(before, ["a", "c"], "front"))).toEqual([
+      "b",
+      "d",
+      "a",
+      "c",
+    ]);
+  });
+
+  it("normalises z to a dense sequence", () => {
+    // Sparse or duplicate z values make paint order fall back to document
+    // order for ties, so what you see stops matching what is stored.
+    const before = formDocumentSchema.parse({
+      schemaVersion: SCHEMA_VERSION,
+      id: "doc_1",
+      title: "Test",
+      pages: [
+        {
+          id: "page_1",
+          elements: [
+            createElement("text", "a", { x: 0, y: 0, z: 40 }),
+            createElement("text", "b", { x: 0, y: 0, z: 40 }),
+            createElement("text", "c", { x: 0, y: 0, z: 99 }),
+          ],
+        },
+      ],
+    });
+
+    const after = reorderZ(before, ["c"], "back");
+
+    expect(after.pages[0]?.elements.map((e) => e.z).sort()).toEqual([0, 1, 2]);
+  });
+
+  it("ignores an empty selection", () => {
+    const before = stacked(["a"]);
+    expect(reorderZ(before, [], "front")).toBe(before);
+  });
+});
+
+describe("duplicate and insert", () => {
+  it("gives copies fresh ids and an offset", () => {
+    // Architecture rule 3: ids are identity. A duplicate that kept them would
+    // make two elements share their answers.
+    const before = doc(["el_a"]);
+    const copies = duplicateElements(before, ["el_a"], ["el_new"], {
+      dx: 10,
+      dy: 10,
+    });
+
+    expect(copies).toHaveLength(1);
+    expect(copies[0]?.id).toBe("el_new");
+    expect(copies[0]).toMatchObject({ x: 10, y: 10 });
+  });
+
+  it("copies in document order, not the order ids were given", () => {
+    const before = doc(["el_a", "el_b"]);
+    const copies = duplicateElements(before, ["el_b", "el_a"], ["one", "two"], {
+      dx: 0,
+      dy: 0,
+    });
+
+    expect(copies.map((element) => element.id)).toEqual(["one", "two"]);
+    // el_a is first in the document, so it gets the first new id.
+    expect(copies[0]).toMatchObject({ x: 0, y: 0 });
+  });
+
+  it("appends inserted elements to the page", () => {
+    const before = doc(["el_a"]);
+    const copies = duplicateElements(before, ["el_a"], ["el_copy"], {
+      dx: 5,
+      dy: 5,
+    });
+    const after = insertElements(before, "page_1", copies);
+
+    expect(after.pages[0]?.elements.map((e) => e.id)).toEqual([
+      "el_a",
+      "el_copy",
+    ]);
+  });
+
+  it("ignores an empty insert", () => {
+    const before = doc(["el_a"]);
+    expect(insertElements(before, "page_1", [])).toBe(before);
+  });
+});
+
+describe("geometry", () => {
+  it("sets position, size and rotation together", () => {
+    const before = doc(["el_a"]);
+    const after = setElementGeometry(before, "el_a", {
+      x: 5,
+      y: 6,
+      w: 70,
+      h: 80,
+      rotation: 45,
+    });
+
+    expect(findElement(after, "el_a")).toMatchObject({
+      x: 5,
+      y: 6,
+      w: 70,
+      h: 80,
+      rotation: 45,
+    });
+  });
+
+  it("returns the same document when the geometry is unchanged", () => {
+    const before = doc(["el_a"]);
+    const element = findElement(before, "el_a")!;
+
+    expect(
+      setElementGeometry(before, "el_a", {
+        x: element.x,
+        y: element.y,
+        w: element.w,
+        h: element.h,
+        rotation: element.rotation,
+      }),
+    ).toBe(before);
   });
 });
 
