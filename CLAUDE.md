@@ -12,18 +12,18 @@ repo. Keep it updated as decisions are made.
 
 Fixed. Do not substitute.
 
-| Concern | Choice |
-| --- | --- |
-| Framework | Next.js (App Router) + TypeScript, strict mode |
-| Database | Postgres via Drizzle ORM (local Postgres in Docker for dev) |
-| UI | Tailwind + shadcn/ui |
-| Dragging | dnd-kit (**not** react-beautiful-dnd) |
-| Fill-time forms | react-hook-form + zod |
-| PDF rendering | Playwright (headless Chromium) |
-| Spreadsheets | ExcelJS |
-| Email | Resend |
-| Object storage | S3-compatible (Cloudflare R2), via the AWS SDK |
-| Tests | Vitest + Playwright |
+| Concern         | Choice                                                      |
+| --------------- | ----------------------------------------------------------- |
+| Framework       | Next.js (App Router) + TypeScript, strict mode              |
+| Database        | Postgres via Drizzle ORM (local Postgres in Docker for dev) |
+| UI              | Tailwind + shadcn/ui                                        |
+| Dragging        | dnd-kit (**not** react-beautiful-dnd)                       |
+| Fill-time forms | react-hook-form + zod                                       |
+| PDF rendering   | Playwright (headless Chromium)                              |
+| Spreadsheets    | ExcelJS                                                     |
+| Email           | Resend                                                      |
+| Object storage  | S3-compatible (Cloudflare R2), via the AWS SDK              |
+| Tests           | Vitest + Playwright                                         |
 
 **Ask before adding any dependency not listed here.**
 
@@ -156,3 +156,23 @@ decided and why.
   GitHub later if wanted.
 - **2026-09-18 — Development branch is `main-ry1qm3`.** Work is pushed there,
   not to `main`.
+- **2026-09-18 — pnpm workspace monorepo** (`apps/web`, `packages/schema`), no
+  Turborepo. Architecture rule 1 needs `@formcraft/schema` importable by four
+  consumers; a workspace is the smallest thing that does that. The web app
+  consumes it as TypeScript source via `transpilePackages`, so there's no build
+  step between editing the schema and seeing it applied.
+- **2026-09-18 — No auth provider; one hardcoded dev user.** Owner's call.
+  `users` deliberately has no `passwordHash`/session columns: Auth.js and Clerk
+  each bring their own account tables, and guessing now would only buy a
+  migration to undo. Revisit at Slice 3, where "My Forms" first needs a real
+  owner.
+- **2026-09-18 — Tailwind v4 is CSS-first, so there is no `tailwind.config.ts`.**
+  Theme tokens live in `apps/web/src/app/globals.css`, including the A4 page
+  constants from architecture rule 2.
+- **2026-09-18 — ESLint pinned to 9.x, not 10.** `eslint-config-next@16`'s
+  plugins (react, import, jsx-a11y) don't yet declare ESLint 10 support.
+  Config uses `eslint-config-next`'s native flat-config exports, no
+  `FlatCompat` shim.
+- **2026-09-18 — All primary keys are nanoid `text`, never `serial`.**
+  Architecture rule 6 forbids enumerable public identifiers, and a sequential
+  PK leaks row counts the moment one reaches a URL.

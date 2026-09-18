@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+/*
+ * Tailwind v4 is CSS-first: there is no tailwind.config.ts. Theme tokens are
+ * declared here and become utilities automatically.
+ *
+ * The page tokens below are architecture rule 2 made concrete. A4 at 96dpi is
+ * 794 x 1123 units, and the builder canvas, the fill page and the PDF all
+ * render those same numbers at different scales. There is exactly one layout
+ * system in this app and this is where its constants live.
+ */
+@theme {
+  --spacing-page-w: 794px;
+  --spacing-page-h: 1123px;
+}
+
+:root {
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+}

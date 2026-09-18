@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: formcraft-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: formcraft
+      POSTGRES_PASSWORD: formcraft
+      POSTGRES_DB: formcraft
+    ports:
+      - "5432:5432"
+    volumes:
+      - formcraft-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U formcraft -d formcraft"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  formcraft-pgdata:

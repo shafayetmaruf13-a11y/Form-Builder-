@@ -1,0 +1,4 @@
+pnpm-lock.yaml
+.next/
+node_modules/
+apps/web/src/db/migrations/

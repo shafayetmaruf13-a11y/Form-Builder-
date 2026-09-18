@@ -1,8 +1,17 @@
 node_modules/
 dist/
 build/
+
+# Next.js
+.next/
+next-env.d.ts
+*.tsbuildinfo
+
+# Secrets — .env.example is the committed template, .env never is.
 .env
-.env.local
+.env.*
+!.env.example
+
 *.log
 .DS_Store
 Thumbs.db
