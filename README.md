@@ -10,10 +10,14 @@ build plan. Read it before changing anything structural.
 
 ## Status
 
-**Slice 0 — foundation.** The scaffold, database and toolchain are in place.
-There is no product UI yet: the home page exists only to prove the wiring
-(workspace import resolves, database reachable, migration applied, dev user
-seeded). Slice 1 adds the document schema and the renderer.
+**Slice 1 — document schema and read-only renderer.** `packages/schema` defines
+what a form document is, and `<FormRenderer />` draws one on an A4 page. The
+home page renders a sample document containing one of every element type, at two
+different scales, to show that the coordinate system holds. There is no builder
+and no database in that path yet; Slice 2 adds the builder.
+
+The Slice 0 wiring probe (workspace import, database, migration, dev user) moved
+to [`/health`](http://localhost:3000/health).
 
 ## Requirements
 
@@ -31,9 +35,9 @@ pnpm db:migrate                 # applies migrations, seeds the dev user
 pnpm dev                        # http://localhost:3000
 ```
 
-The home page should report **Connected. 7 tables** and a dev user of
-`dev@formcraft.local`. If it reports "Not reachable", Postgres isn't up — run
-`pnpm db:up` and reload.
+`/` renders the sample document and needs no database. `/health` should report
+**Connected. 7 tables** and a dev user of `dev@formcraft.local`; if it reports
+"Not reachable", Postgres isn't up — run `pnpm db:up` and reload.
 
 ### Without Docker
 
@@ -63,12 +67,21 @@ create database formcraft owner formcraft;
 ## Layout
 
 ```
-apps/web/            Next.js app (App Router)
-  src/app/           routes
-  src/db/            Drizzle schema, client, migrations, migrate script
-packages/schema/     the form document schema — shared by builder, renderer,
-                     PDF worker and API. Empty shell until Slice 1.
+apps/web/                      Next.js app (App Router)
+  src/app/                     routes — / (renderer), /health (wiring probe)
+  src/components/renderer/     <FormRenderer />, page surface, element views
+  src/db/                      Drizzle schema, client, migrations, migrate script
+packages/schema/               the form document schema — shared by builder,
+                               renderer, PDF worker and API
 ```
+
+### The one rule worth knowing before you touch the renderer
+
+A page is 794 × 1123 units (A4 at 96dpi) and every element stores its geometry
+in those units. Scale is applied **once**, as a transform on the page surface;
+no element ever knows what scale it is being drawn at. That is what makes the
+builder, the fill page and the PDF agree. Do not add a second way to lay
+elements out.
 
 ## Authentication
 

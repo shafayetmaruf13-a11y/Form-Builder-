@@ -1,16 +1,14 @@
 /**
  * @formcraft/schema — the single source of truth for what a form document is.
  *
- * Architecture rule 1: a form is a JSON document, not a page. The zod schema
- * that lives here is shared by the builder, the renderer, the PDF worker and
- * the API. Everything else derives from it.
- *
- * Slice 0 creates this package as an empty shell so the workspace wiring is
- * proven end to end. Slice 1 fills it in.
+ * Architecture rule 1: a form is a JSON document, not a page. The zod schemas
+ * here are shared by the builder, the renderer, the PDF worker and the API.
+ * Everything else derives from them. Nothing downstream may define its own
+ * notion of an element, a style or a page coordinate.
  */
 
-/** A page is A4 at 96dpi. Every element's x/y/w/h is in these units. */
-export const PAGE_WIDTH = 794;
-
-/** A page is A4 at 96dpi. Every element's x/y/w/h is in these units. */
-export const PAGE_HEIGHT = 1123;
+export * from "./geometry";
+export * from "./style";
+export * from "./elements";
+export * from "./document";
+export * from "./fixtures";

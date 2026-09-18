@@ -176,3 +176,37 @@ decided and why.
 - **2026-09-18 — All primary keys are nanoid `text`, never `serial`.**
   Architecture rule 6 forbids enumerable public identifiers, and a sequential
   PK leaks row counts the moment one reaches a URL.
+- **2026-09-18 — CI runs lint, typecheck, format, test, migrate and build** on
+  every push and PR. Migrations are applied twice against a Postgres service
+  container, and `db:generate` is re-run with a diff check so a schema edit
+  without a generated migration fails at review time.
+- **2026-09-18 — `schemaVersion` is on the document from the first version.**
+  Rule 4 means a version published today must parse years from now; a
+  discriminator is only cheap to add before there are two shapes to reconcile.
+- **2026-09-18 — Style defaults use zod's `.prefault({})`, not `.default({})`.**
+  In zod 4 `.default(v)` short-circuits parsing and returns `v` verbatim, so
+  `.default({})` yields an empty style with none of the field defaults applied.
+  Every element therefore carries a fully populated style, and no renderer has
+  to handle a missing field.
+- **2026-09-18 — `fontFamily` is a closed enum of four self-hosted families,**
+  not a free string. A family absent from headless Chromium renders a different
+  PDF than the design, which breaks the one promise the architecture exists to
+  keep. Families bind CSS variables (`FONT_CSS_VARIABLES`) that both the app and
+  the Slice 5 PDF worker must define. Adding a family means shipping its woff2
+  to both.
+- **2026-09-18 — Page scale is applied exactly once, on the page surface.**
+  Elements are laid out at raw document coordinates and never learn their
+  scale, so the builder (0.8), a thumbnail (0.25) and the PDF (1.0) cannot
+  drift — there is only one layout path. This is rule 2 in code.
+- **2026-09-18 — One `validation` bag for all input types,** rather than
+  fourteen bespoke validation schemas. A `minLength` on a number is harmless;
+  Slice 4 applies only the fields that make sense per type.
+- **2026-09-18 — The conditional _evaluator_ belongs to Slice 4, not Slice 1.**
+  Slice 1 fixes the rule's shape only. A read-only design preview renders every
+  element regardless of its condition, because the designer needs to see what
+  they built.
+- **2026-09-18 — Read-only input views are not real form controls.** They draw
+  what a field looks like, with no state and no `<input>` elements: a preview
+  that announced itself to a screen reader as fillable would be lying. Slice 4
+  renders the live, accessible versions.
+- **2026-09-18 — `/` is the renderer, `/health` is the Slice 0 wiring probe.**
