@@ -30,13 +30,16 @@ import {
 export function ElementView({
   element,
   imageSrc,
+  offset,
 }: {
   element: FormElement;
   /** Resolves an image element's objectKey to a URL. Slice 3 supplies it. */
   imageSrc?: (objectKey: string) => string;
+  /** Live drag displacement in page units; builder only. */
+  offset?: { dx: number; dy: number } | null;
 }) {
   return (
-    <ElementFrame element={element}>
+    <ElementFrame element={element} offset={offset}>
       {renderBody(element, imageSrc)}
     </ElementFrame>
   );

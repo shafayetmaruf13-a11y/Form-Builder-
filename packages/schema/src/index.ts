@@ -11,4 +11,6 @@ export * from "./geometry";
 export * from "./style";
 export * from "./elements";
 export * from "./document";
+export * from "./operations";
+export * from "./defaults";
 export * from "./fixtures";

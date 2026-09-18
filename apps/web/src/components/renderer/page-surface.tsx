@@ -1,4 +1,10 @@
-import { PAGE_HEIGHT, PAGE_WIDTH, type Page } from "@formcraft/schema";
+import {
+  PAGE_HEIGHT,
+  PAGE_WIDTH,
+  type FormElement,
+  type Page,
+} from "@formcraft/schema";
+import type { ReactNode } from "react";
 
 import { ElementView } from "./element-view";
 
@@ -15,10 +21,20 @@ export function PageSurface({
   page,
   scale = 1,
   imageSrc,
+  renderElement,
 }: {
   page: Page;
   scale?: number;
   imageSrc?: (objectKey: string) => string;
+  /**
+   * Overrides how each element is drawn.
+   *
+   * The builder passes a wrapper that subscribes to just that element, so a
+   * drag re-renders the element being dragged and nothing else. It still
+   * renders through `ElementView` underneath — this is an injection point, not
+   * a second renderer, and there is still only one way to lay a page out.
+   */
+  renderElement?: (element: FormElement) => ReactNode;
 }) {
   // Painting order is z, then document order for ties — a stable sort keeps
   // equal-z elements in the order the designer added them.
@@ -47,9 +63,17 @@ export function PageSurface({
           overflow: "hidden",
         }}
       >
-        {elements.map((element) => (
-          <ElementView key={element.id} element={element} imageSrc={imageSrc} />
-        ))}
+        {elements.map((element) =>
+          renderElement ? (
+            renderElement(element)
+          ) : (
+            <ElementView
+              key={element.id}
+              element={element}
+              imageSrc={imageSrc}
+            />
+          ),
+        )}
       </div>
     </div>
   );

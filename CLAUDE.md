@@ -210,3 +210,34 @@ decided and why.
   that announced itself to a screen reader as fillable would be lying. Slice 4
   renders the live, accessible versions.
 - **2026-09-18 — `/` is the renderer, `/health` is the Slice 0 wiring probe.**
+- **2026-09-18 — Slice 2 is built in three parts.** 2a: store, command stack,
+  canvas, select/move/delete, undo/redo, palette drag-to-create. 2b: resize,
+  rotate, multi-select, marquee, z-order, snap and guides, nudge, clipboard,
+  zoom, pan. 2c: properties panel, multi-page strip, logo upload. One 35-file
+  session is reviewable in theory and not in practice.
+- **2026-09-18 — The document and the gesture are separate state.** A drag
+  writes only ephemeral `drag` state, applied as a CSS transform; the document
+  is written once, on pointer-up. This is what buys 60fps _and_ an undo history
+  with one entry per gesture instead of one per frame. Never write the document
+  from a pointer-move handler.
+- **2026-09-18 — Structural sharing is a contract of `operations.ts`,** not an
+  optimisation. Unchanged elements, unchanged pages and unchanged documents must
+  come back as the same object reference, because the store's per-element
+  subscriptions compare by identity. An operation that rebuilt everything would
+  re-render the whole canvas on every frame.
+- **2026-09-18 — The builder store is hand-rolled on `useSyncExternalStore`,**
+  not a state library. It is ~80 lines, and the interesting part — the command
+  stack — is not something any store library provides. Selector subscriptions
+  are the point: plain context would re-render every consumer on every change.
+  Selectors must return stable references or React loops.
+- **2026-09-18 — dnd-kit covers drag-to-create and element move; resize and
+  rotate handles use raw pointer capture.** dnd-kit is the right tool for
+  dragging between and within containers, and the wrong one for per-handle
+  transform maths. The stack rule is honoured where it is about dragging.
+- **2026-09-18 — `PageSurface` takes an optional `renderElement`.** The builder
+  passes a wrapper that subscribes per element; it still draws through
+  `ElementView`. This is an injection point, not a second renderer — the builder
+  shows exactly what the PDF will show because it is the same code.
+- **2026-09-18 — localStorage draft is a deliberate stopgap.** The quality bar
+  says nothing is ever lost, but server persistence is Slice 3. Slice 3 replaces
+  `persistence/use-draft.ts` wholesale.

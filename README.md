@@ -10,14 +10,21 @@ build plan. Read it before changing anything structural.
 
 ## Status
 
-**Slice 1 — document schema and read-only renderer.** `packages/schema` defines
-what a form document is, and `<FormRenderer />` draws one on an A4 page. The
-home page renders a sample document containing one of every element type, at two
-different scales, to show that the coordinate system holds. There is no builder
-and no database in that path yet; Slice 2 adds the builder.
+**Slice 2a — the builder's skeleton.** `/builder` gives you a palette, a canvas
+and undo. Drag a field onto the page, move it, delete it, undo it. Resize,
+rotate, multi-select, snapping and z-order come in 2b; the properties panel,
+multi-page and logo upload in 2c.
 
-The Slice 0 wiring probe (workspace import, database, migration, dev user) moved
-to [`/health`](http://localhost:3000/health).
+Behind it: `packages/schema` defines what a form document is (Slice 1), and
+`<FormRenderer />` draws one — the builder reuses that renderer rather than
+having its own, so the canvas shows exactly what the PDF will.
+
+- [`/`](http://localhost:3000/) — the read-only renderer, at two scales
+- [`/builder`](http://localhost:3000/builder) — the builder
+- [`/health`](http://localhost:3000/health) — environment check
+
+Nothing is saved to the server yet (Slice 3). A localStorage draft stands in, so
+a refresh does not lose work.
 
 ## Requirements
 
@@ -67,13 +74,26 @@ create database formcraft owner formcraft;
 ## Layout
 
 ```
-apps/web/                      Next.js app (App Router)
-  src/app/                     routes — / (renderer), /health (wiring probe)
+apps/web/
+  src/app/                     routes — /, /builder, /health
   src/components/renderer/     <FormRenderer />, page surface, element views
+  src/builder/
+    store/                     state, command stack, undo/redo
+    geometry/                  screen ↔ page conversion
+    canvas/                    page + interaction overlay
+    palette/  keyboard/  persistence/
   src/db/                      Drizzle schema, client, migrations, migrate script
-packages/schema/               the form document schema — shared by builder,
-                               renderer, PDF worker and API
+packages/schema/               the form document schema and pure document
+                               operations — shared by builder, renderer, PDF
+                               worker and API
 ```
+
+### The other rule worth knowing before you touch the builder
+
+A drag writes **ephemeral** state only, applied as a CSS transform. The document
+is written once, when the gesture ends. That is what keeps dragging at 60fps and
+keeps undo at one entry per gesture instead of one per frame. Never write the
+document from a pointer-move handler.
 
 ### The one rule worth knowing before you touch the renderer
 

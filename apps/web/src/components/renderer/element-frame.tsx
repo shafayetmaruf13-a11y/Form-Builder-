@@ -12,11 +12,30 @@ import type { ReactNode } from "react";
 export function ElementFrame({
   element,
   children,
+  offset,
 }: {
   element: FormElement;
   children: ReactNode;
+  /**
+   * A live, uncommitted displacement in page units.
+   *
+   * The builder sets this while an element is being dragged, so the element
+   * itself moves at pointer speed without the document being written to sixty
+   * times a second. It is always null outside a gesture, which is why the PDF
+   * and fill-page renderers never pass it.
+   */
+  offset?: { dx: number; dy: number } | null;
 }) {
   const { x, y, w, h, rotation, z, style } = element;
+
+  // Translate before rotate: the element rotates about its own centre, and the
+  // drag then moves that whole rotated box.
+  const transform = [
+    offset ? `translate(${offset.dx}px, ${offset.dy}px)` : "",
+    rotation === 0 ? "" : `rotate(${rotation}deg)`,
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <div
@@ -28,10 +47,10 @@ export function ElementFrame({
         top: y,
         width: w,
         height: h,
-        // Rotation is about the centre, matching how the builder's rotate
-        // handle will behave and how the PDF must reproduce it.
-        transform: rotation === 0 ? undefined : `rotate(${rotation}deg)`,
+        transform: transform === "" ? undefined : transform,
         transformOrigin: "center center",
+        // Hints the compositor during a drag; harmless when idle.
+        willChange: offset ? "transform" : undefined,
         opacity: style.opacity,
         zIndex: z,
       }}
