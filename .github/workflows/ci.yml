@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# A new push to the same branch makes the in-flight run irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: lint / typecheck / test / build
+    runs-on: ubuntu-latest
+
+    # The migration step below needs a real Postgres. Credentials match
+    # docker-compose.yml so DATABASE_URL is identical to local dev.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: formcraft
+          POSTGRES_PASSWORD: formcraft
+          POSTGRES_DB: formcraft
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U formcraft -d formcraft"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://formcraft:formcraft@localhost:5432/formcraft
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Format
+        run: pnpm format:check
+
+      - name: Test
+        run: pnpm test
+
+      # Proves the committed migrations actually apply to an empty database,
+      # and — by running twice — that re-applying them is a no-op. A drifted
+      # or non-idempotent migration fails here rather than on someone's laptop.
+      - name: Migrate
+        run: |
+          pnpm db:migrate
+          pnpm db:migrate
+
+      # Catches migrations that were never generated after a schema.ts edit.
+      - name: Check for uncommitted migrations
+        run: |
+          pnpm db:generate
+          if ! git diff --quiet -- apps/web/src/db/migrations; then
+            echo "::error::schema.ts changed without a generated migration. Run 'pnpm db:generate' and commit the result."
+            git --no-pager diff --stat -- apps/web/src/db/migrations
+            exit 1
+          fi
+
+      - name: Build
+        run: pnpm build
