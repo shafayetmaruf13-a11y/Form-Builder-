@@ -10,11 +10,13 @@ build plan. Read it before changing anything structural.
 
 ## Status
 
-**Slice 2b — the builder's gestures.** `/builder` gives you a palette, a canvas
-and the editing surface: drag to create, move, resize, rotate, multi-select,
-marquee, restack, nudge, duplicate, copy/paste, snapping with alignment guides,
-zoom and pan — all undoable. The properties panel, multi-page and logo upload
-come in 2c.
+**Slice 2 complete — the builder.** `/builder` gives you a palette, a canvas, a
+properties panel and a page strip. Drag to create, move, resize, rotate,
+multi-select, marquee, restack, nudge, duplicate, copy/paste, snap to a grid and
+to neighbours, zoom and pan. Edit every property of a selected element, manage
+multiple pages, and upload a logo. All of it undoable.
+
+Next is Slice 3: saving forms to the server, autosave and a "My Forms" library.
 
 Behind it: `packages/schema` defines what a form document is (Slice 1), and
 `<FormRenderer />` draws one — the builder reuses that renderer rather than
@@ -25,7 +27,9 @@ having its own, so the canvas shows exactly what the PDF will.
 - [`/health`](http://localhost:3000/health) — environment check
 
 Nothing is saved to the server yet (Slice 3). A localStorage draft stands in, so
-a refresh does not lose work.
+a refresh does not lose work. Uploaded images go to `.uploads/` on disk and are
+served from `/api/uploads/<key>`; Slice 5 swaps that for Cloudflare R2 without
+touching any stored document.
 
 ## Requirements
 
@@ -80,9 +84,12 @@ apps/web/
   src/components/renderer/     <FormRenderer />, page surface, element views
   src/builder/
     store/                     state, command stack, undo/redo
-    geometry/                  screen ↔ page conversion
+    geometry/                  screen ↔ page conversion, resize/rotate, snapping
     canvas/                    page + interaction overlay
+    properties/                the right-hand panel and its controls
+    pages/                     the page strip
     palette/  keyboard/  persistence/
+  src/lib/storage/             object storage (local disk; R2 at Slice 5)
   src/db/                      Drizzle schema, client, migrations, migrate script
 packages/schema/               the form document schema and pure document
                                operations — shared by builder, renderer, PDF

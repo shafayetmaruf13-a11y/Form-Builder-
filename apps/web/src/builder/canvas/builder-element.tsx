@@ -1,6 +1,7 @@
 "use client";
 
 import { ElementView } from "@/components/renderer/element-view";
+import { objectUrl } from "@/lib/storage/url";
 
 import {
   useDragOffset,
@@ -19,8 +20,8 @@ import {
  *
  * Moves are applied as a CSS transform and resizes as real geometry, on
  * purpose. A translate stays on the compositor and costs no layout, which is
- * what the common case deserves; a resize has to reflow whatever is inside the
- * element anyway.
+ * what the common case deserves; a resize has to reflow the element's contents
+ * anyway.
  */
 export function BuilderElement({ id }: { id: string }) {
   const element = useElement(id);
@@ -31,5 +32,7 @@ export function BuilderElement({ id }: { id: string }) {
 
   const displayed = geometry ? { ...element, ...geometry } : element;
 
-  return <ElementView element={displayed} offset={offset} />;
+  return (
+    <ElementView element={displayed} offset={offset} imageSrc={objectUrl} />
+  );
 }

@@ -1,3 +1,4 @@
+import { type Page, pageSchema } from "./document";
 import { type ElementType, type FormElement, elementSchema } from "./elements";
 
 /**
@@ -141,4 +142,9 @@ export function createElement(
     z: position.z ?? 0,
     ...typeSpecificFields(type, id),
   });
+}
+
+/** A new, empty page. Like `createElement`, the id is supplied by the caller. */
+export function createPage(id: string): Page {
+  return pageSchema.parse({ id, elements: [] });
 }

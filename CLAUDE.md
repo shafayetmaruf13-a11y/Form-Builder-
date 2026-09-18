@@ -271,3 +271,37 @@ decided and why.
   and space-drag moves its scroll position. A separate pan transform would be a
   second way for the page to be positioned, and the architecture rests on there
   being one.
+- **2026-09-18 — shadcn/ui's registry is unreachable from the dev container.**
+  `ui.shadcn.com` is refused by the environment's network policy, so the CLI
+  cannot pull components. `components.json`, `cn()` and its deps are in place
+  and the panel's controls follow shadcn's shape, so `npx shadcn add` works
+  unchanged once that host is allowed. The controls are native elements
+  meanwhile, which for a properties panel is barely a compromise — native
+  `<select>` and `<input type="color">` are accessible and open the platform's
+  own pickers.
+- **2026-09-18 — The properties panel is driven by the schema's discriminant.**
+  What it shows is a switch on `element.type`. Adding an element type means
+  adding a case, not inventing a parallel notion of what that type can do.
+- **2026-09-18 — Panel edits re-validate through the schema before becoming a
+  command.** An invalid patch is a no-op, not an undo entry that does nothing
+  and not a corrupted document. The panel constrains its own inputs; this is a
+  backstop.
+- **2026-09-18 — Consecutive edits to the same element merge into one undo.**
+  Typing a label is one history entry, not one per keystroke. The merge keeps
+  the original before-state and takes the latest after-state.
+- **2026-09-18 — Object storage is an interface with one local-disk
+  implementation.** R2 is the stack's choice and Slice 5 needs a bucket anyway,
+  but writing an R2 client now — against credentials nobody has and which
+  nothing here can exercise — would mean shipping untested code and calling it
+  done. The seam is what matters: a document stores only an `objectKey`, so
+  Slice 5 changes `lib/storage` and nothing else.
+- **2026-09-18 — `objectUrl` lives in its own module.** The canvas and page
+  thumbnails are client components; importing it from `lib/storage/index.ts`
+  drags `node:fs` into the browser bundle and fails the build.
+- **2026-09-18 — Uploads are validated server-side and keys are generated
+  server-side.** MIME allowlist, size cap measured from the bytes rather than
+  the reported length, and a nanoid key — never the supplied filename, which is
+  a path traversal and an overwrite waiting to happen. Served objects carry a
+  restrictive CSP and `nosniff`, because an uploaded SVG is script-capable.
+- **2026-09-18 — Page thumbnails render the document through `PageSurface`,**
+  not screenshots. Slice 3's library grid reuses the same mechanism.

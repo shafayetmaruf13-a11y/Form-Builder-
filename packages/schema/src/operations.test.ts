@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { createElement } from "./defaults";
+import { createElement, createPage } from "./defaults";
 import { SCHEMA_VERSION, formDocumentSchema } from "./document";
 import { ELEMENT_TYPES } from "./elements";
 import {
   addElement,
+  addPage,
   duplicateElements,
   elementLocations,
   findElement,
@@ -13,8 +14,14 @@ import {
   removeElements,
   reorderZ,
   restoreElements,
+  movePage,
+  removePage,
   setElementGeometry,
+  setTitle,
   translateElements,
+  updateElement,
+  updateElementStyle,
+  updatePage,
 } from "./operations";
 
 function doc(elementIds: string[] = []) {
@@ -427,6 +434,130 @@ describe("geometry", () => {
         rotation: element.rotation,
       }),
     ).toBe(before);
+  });
+});
+
+describe("updating an element", () => {
+  it("applies a patch", () => {
+    const before = doc(["el_a"]);
+    const after = updateElement(before, "el_a", { content: "Hello" });
+
+    expect(findElement(after, "el_a")).toMatchObject({ content: "Hello" });
+  });
+
+  it("refuses a patch that would make the element invalid", () => {
+    // The panel is a wall of free-text and numeric inputs; a bad value must
+    // leave the document alone rather than corrupt it.
+    const before = doc(["el_a"]);
+
+    expect(updateElement(before, "el_a", { w: -50 })).toBe(before);
+    expect(updateElement(before, "el_a", { type: "carousel" })).toBe(before);
+    expect(updateElement(before, "el_a", { style: { opacity: 5 } })).toBe(
+      before,
+    );
+  });
+
+  it("ignores an unknown element", () => {
+    const before = doc(["el_a"]);
+    expect(updateElement(before, "nope", { content: "x" })).toBe(before);
+  });
+
+  it("merges a style patch without dropping the rest of the block", () => {
+    const before = doc(["el_a"]);
+    const after = updateElementStyle(before, "el_a", { fontSize: 24 });
+    const style = findElement(after, "el_a")!.style;
+
+    expect(style.fontSize).toBe(24);
+    expect(style.fontFamily).toBe("inter");
+    expect(style.opacity).toBe(1);
+  });
+
+  it("leaves other elements identical", () => {
+    const before = doc(["el_a", "el_b"]);
+    const after = updateElement(before, "el_a", { content: "changed" });
+
+    expect(findElement(after, "el_b")).toBe(findElement(before, "el_b"));
+  });
+});
+
+describe("pages", () => {
+  function pages(document: ReturnType<typeof doc>) {
+    return document.pages.map((page) => page.id);
+  }
+
+  function twoPages() {
+    return formDocumentSchema.parse({
+      schemaVersion: SCHEMA_VERSION,
+      id: "doc_1",
+      title: "Test",
+      pages: [
+        { id: "page_1", elements: [] },
+        { id: "page_2", elements: [] },
+      ],
+    });
+  }
+
+  it("appends a page by default and inserts at an index when given one", () => {
+    const before = twoPages();
+
+    expect(pages(addPage(before, createPage("page_3")))).toEqual([
+      "page_1",
+      "page_2",
+      "page_3",
+    ]);
+    expect(pages(addPage(before, createPage("page_3"), 1))).toEqual([
+      "page_1",
+      "page_3",
+      "page_2",
+    ]);
+  });
+
+  it("removes a page", () => {
+    expect(pages(removePage(twoPages(), "page_1"))).toEqual(["page_2"]);
+  });
+
+  it("refuses to remove the last page", () => {
+    // formDocumentSchema requires at least one, and a document with nothing to
+    // render is never what someone meant.
+    const single = doc([]);
+    expect(removePage(single, "page_1")).toBe(single);
+  });
+
+  it("reorders pages", () => {
+    const before = formDocumentSchema.parse({
+      schemaVersion: SCHEMA_VERSION,
+      id: "doc_1",
+      title: "Test",
+      pages: [
+        { id: "a", elements: [] },
+        { id: "b", elements: [] },
+        { id: "c", elements: [] },
+      ],
+    });
+
+    expect(pages(movePage(before, "a", 2))).toEqual(["b", "c", "a"]);
+    expect(pages(movePage(before, "c", 0))).toEqual(["c", "a", "b"]);
+    expect(movePage(before, "a", 0)).toBe(before);
+    expect(movePage(before, "missing", 0)).toBe(before);
+  });
+
+  it("clamps an out-of-range move", () => {
+    const before = twoPages();
+    expect(pages(movePage(before, "page_1", 99))).toEqual(["page_2", "page_1"]);
+  });
+
+  it("patches a page's background and leaves other pages identical", () => {
+    const before = twoPages();
+    const after = updatePage(before, "page_2", { background: "#f0f0f0" });
+
+    expect(after.pages[1]?.background).toBe("#f0f0f0");
+    expect(after.pages[0]).toBe(before.pages[0]);
+  });
+
+  it("sets the document title", () => {
+    const before = doc([]);
+    expect(setTitle(before, "Renamed").title).toBe("Renamed");
+    expect(setTitle(before, before.title)).toBe(before);
   });
 });
 

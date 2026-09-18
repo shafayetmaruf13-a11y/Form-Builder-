@@ -3,17 +3,24 @@ import {
   type FormDocument,
   type FormElement,
   type Geometry,
+  type Page,
   type ZDirection,
   addElement,
+  addPage,
   captureZValues,
   elementLocations,
   insertElements,
+  movePage,
   removeElements,
+  removePage,
   reorderZ,
+  replaceElement,
   restoreElements,
   setElementGeometry,
+  setTitle,
   setZValues,
   translateElements,
+  updatePage,
 } from "@formcraft/schema";
 
 /**
@@ -162,6 +169,116 @@ export function reorderZCommand(
     mergeKey: null,
     redo: (current) => reorderZ(current, ids, direction),
     undo: (current) => setZValues(current, before),
+  };
+}
+
+/**
+ * Replaces one element, for a properties-panel edit.
+ *
+ * Merges with later edits to the same element, so typing a label is one undo
+ * rather than one per keystroke. The merge keeps the *original* before-state
+ * and takes the latest after-state, which is what makes a burst of edits
+ * collapse into a single reversible step.
+ */
+export interface UpdateElementCommand extends Command {
+  readonly kind: "updateElement";
+  readonly id: string;
+  readonly before: FormElement;
+  readonly after: FormElement;
+}
+
+function isUpdateElementCommand(
+  command: Command,
+): command is UpdateElementCommand {
+  return (command as Partial<UpdateElementCommand>).kind === "updateElement";
+}
+
+export function updateElementCommand(
+  id: string,
+  before: FormElement,
+  after: FormElement,
+  label = "Edit",
+): UpdateElementCommand {
+  return {
+    kind: "updateElement",
+    label,
+    mergeKey: `update:${id}`,
+    id,
+    before,
+    after,
+    redo: (document) => replaceElement(document, id, after),
+    undo: (document) => replaceElement(document, id, before),
+    merge(next) {
+      if (!isUpdateElementCommand(next) || next.id !== id) return null;
+      return updateElementCommand(id, before, next.after, next.label);
+    },
+  };
+}
+
+export function addPageCommand(page: Page, index?: number): Command {
+  return {
+    label: "Add page",
+    mergeKey: null,
+    redo: (document) => addPage(document, page, index),
+    undo: (document) => removePage(document, page.id),
+  };
+}
+
+/**
+ * Deletes a page, remembering the page itself and where it sat, so undo puts
+ * back both its contents and its position.
+ */
+export function removePageCommand(
+  document: FormDocument,
+  pageId: string,
+): Command | null {
+  const index = document.pages.findIndex((page) => page.id === pageId);
+  const page = document.pages[index];
+  // The schema requires at least one page, so this is not an offer we make.
+  if (!page || document.pages.length <= 1) return null;
+
+  return {
+    label: "Delete page",
+    mergeKey: null,
+    redo: (current) => removePage(current, pageId),
+    undo: (current) => addPage(current, page, index),
+  };
+}
+
+export function movePageCommand(
+  document: FormDocument,
+  pageId: string,
+  toIndex: number,
+): Command {
+  const from = document.pages.findIndex((page) => page.id === pageId);
+
+  return {
+    label: "Reorder pages",
+    mergeKey: null,
+    redo: (current) => movePage(current, pageId, toIndex),
+    undo: (current) => movePage(current, pageId, from),
+  };
+}
+
+export function updatePageCommand(
+  pageId: string,
+  before: Partial<Page>,
+  after: Partial<Page>,
+): Command {
+  return {
+    label: "Edit page",
+    mergeKey: `page:${pageId}`,
+    redo: (document) => updatePage(document, pageId, after),
+    undo: (document) => updatePage(document, pageId, before),
+  };
+}
+
+export function setTitleCommand(before: string, after: string): Command {
+  return {
+    label: "Rename form",
+    mergeKey: "title",
+    redo: (document) => setTitle(document, after),
+    undo: (document) => setTitle(document, before),
   };
 }
 

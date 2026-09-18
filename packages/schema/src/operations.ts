@@ -1,5 +1,5 @@
 import type { FormDocument, Page } from "./document";
-import type { FormElement } from "./elements";
+import { type FormElement, elementSchema } from "./elements";
 
 /**
  * Pure transforms over a form document.
@@ -164,6 +164,140 @@ export function translateElements(
   });
 
   return changed ? { ...document, pages } : document;
+}
+
+/**
+ * Applies a partial change to one element, re-validating the result.
+ *
+ * The patch goes through `elementSchema.parse` rather than being trusted,
+ * because the properties panel is a wall of free-text and numeric inputs and
+ * architecture rule 1 says the schema decides what a valid element is. An
+ * invalid patch leaves the document untouched instead of corrupting it — the
+ * panel is expected to constrain its own inputs, so this is a backstop, not the
+ * primary defence.
+ */
+export function updateElement(
+  document: FormDocument,
+  id: string,
+  patch: Record<string, unknown>,
+): FormDocument {
+  const current = findElement(document, id);
+  if (!current) return document;
+
+  const parsed = elementSchema.safeParse({ ...current, ...patch });
+  if (!parsed.success) return document;
+
+  return replaceElement(document, id, parsed.data);
+}
+
+/** Replaces an element wholesale with one already known to be valid. */
+export function replaceElement(
+  document: FormDocument,
+  id: string,
+  element: FormElement,
+): FormDocument {
+  let changed = false;
+
+  const pages = document.pages.map((page) => {
+    let pageChanged = false;
+
+    const elements = page.elements.map((candidate) => {
+      if (candidate.id !== id) return candidate;
+      pageChanged = true;
+      return element;
+    });
+
+    if (!pageChanged) return page;
+    changed = true;
+    return { ...page, elements };
+  });
+
+  return changed ? { ...document, pages } : document;
+}
+
+/** Merges a style patch into an element's style block. */
+export function updateElementStyle(
+  document: FormDocument,
+  id: string,
+  patch: Record<string, unknown>,
+): FormDocument {
+  const current = findElement(document, id);
+  if (!current) return document;
+
+  return updateElement(document, id, {
+    style: { ...current.style, ...patch },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Pages
+// ---------------------------------------------------------------------------
+
+/** Inserts a page. A negative or oversized index appends. */
+export function addPage(
+  document: FormDocument,
+  page: Page,
+  index?: number,
+): FormDocument {
+  const pages = [...document.pages];
+  const at =
+    index === undefined
+      ? pages.length
+      : Math.max(0, Math.min(index, pages.length));
+  pages.splice(at, 0, page);
+
+  return { ...document, pages };
+}
+
+/**
+ * Removes a page.
+ *
+ * The last page is never removed: `formDocumentSchema` requires at least one,
+ * and a document with nothing to render is never what someone meant.
+ */
+export function removePage(
+  document: FormDocument,
+  pageId: string,
+): FormDocument {
+  if (document.pages.length <= 1) return document;
+
+  const pages = document.pages.filter((page) => page.id !== pageId);
+  return pages.length === document.pages.length
+    ? document
+    : { ...document, pages };
+}
+
+/** Moves a page to a new index. */
+export function movePage(
+  document: FormDocument,
+  pageId: string,
+  toIndex: number,
+): FormDocument {
+  const from = document.pages.findIndex((page) => page.id === pageId);
+  if (from === -1) return document;
+
+  const to = Math.max(0, Math.min(toIndex, document.pages.length - 1));
+  if (from === to) return document;
+
+  const pages = [...document.pages];
+  const [moved] = pages.splice(from, 1);
+  pages.splice(to, 0, moved!);
+
+  return { ...document, pages };
+}
+
+/** Patches a page's own fields, e.g. its background colour. */
+export function updatePage(
+  document: FormDocument,
+  pageId: string,
+  patch: Partial<Omit<Page, "id" | "elements">>,
+): FormDocument {
+  return replacePage(document, pageId, (page) => ({ ...page, ...patch }));
+}
+
+/** The document's title. */
+export function setTitle(document: FormDocument, title: string): FormDocument {
+  return title === document.title ? document : { ...document, title };
 }
 
 /** Geometry an element can be moved, resized or rotated to. */

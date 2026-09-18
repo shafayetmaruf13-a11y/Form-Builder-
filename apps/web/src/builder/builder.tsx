@@ -36,8 +36,10 @@ import {
   screenToPage,
 } from "./geometry/viewport";
 import { useBuilderShortcuts } from "./keyboard/use-shortcuts";
+import { PageStrip } from "./pages/page-strip";
 import { ElementPalette, paletteTypeFromId } from "./palette/element-palette";
 import { useDraftPersistence } from "./persistence/use-draft";
+import { PropertiesPanel } from "./properties/properties-panel";
 import { BuilderStore } from "./store/builder-store";
 import {
   addElementCommand,
@@ -248,8 +250,11 @@ function BuilderShell({ store }: { store: BuilderStore }) {
         <BuilderToolbar />
         <div className="flex min-h-0 flex-1">
           <ElementPalette />
-          <ScrollableCanvas pageRef={pageRef} />
-          <PropertiesPlaceholder />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <ScrollableCanvas pageRef={pageRef} />
+            <PageStrip />
+          </div>
+          <PropertiesPanel />
         </div>
       </div>
 
@@ -414,7 +419,7 @@ function BuilderToolbar() {
   return (
     <header className="flex flex-wrap items-center gap-3 border-b border-black/10 px-4 py-2 text-sm dark:border-white/15">
       <span className="font-semibold">Formcraft</span>
-      <span className="opacity-50">Slice 2b</span>
+      <span className="opacity-50">Slice 2c</span>
 
       <Divider />
 
@@ -549,25 +554,5 @@ function ToolbarButton({
     >
       {children}
     </button>
-  );
-}
-
-function PropertiesPlaceholder() {
-  const selection = useSelection();
-
-  return (
-    <aside className="hidden w-64 flex-col gap-3 border-l border-black/10 p-4 text-sm lg:flex dark:border-white/15">
-      <h2 className="text-xs font-medium uppercase tracking-wide opacity-60">
-        Properties
-      </h2>
-      <p className="text-xs opacity-60">
-        {selection.length === 0
-          ? "Nothing selected."
-          : `${selection.length} selected.`}
-      </p>
-      <p className="text-xs opacity-50">
-        Editing properties, multi-page and logo upload arrive in Slice 2c.
-      </p>
-    </aside>
   );
 }

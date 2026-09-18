@@ -17,3 +17,6 @@ next-env.d.ts
 Thumbs.db
 .vscode/
 .idea/
+
+# Local object storage for development uploads
+.uploads/
