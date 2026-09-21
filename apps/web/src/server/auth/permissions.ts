@@ -24,6 +24,7 @@ export type Action =
   | "form:deleteAny"
   | "form:publish"
   // Submissions
+  | "submission:readOwn"
   | "submission:readAny"
   | "submission:export"
   | "submission:delete"
@@ -63,6 +64,10 @@ const MINIMUM: Record<Action, Role> = {
   "form:readAny": "admin",
   "form:updateAny": "admin",
   "form:deleteAny": "admin",
+
+  // Publishing a form and never being allowed to read the replies would make
+  // the feature pointless. Reading *other people's* replies is moderation.
+  "submission:readOwn": "user",
 
   // What moderation is: seeing responses, exporting them, removing rubbish.
   "submission:readAny": "moderator",
@@ -214,6 +219,18 @@ export function canWriteForm(actor: Actor, formOwnerId: string): boolean {
   if (!isActive(actor)) return false;
   if (formOwnerId === actor.id) return can(actor.role, "form:updateOwn");
   return can(actor.role, "form:updateAny");
+}
+
+/**
+ * Whether an actor may read the responses to a particular form.
+ *
+ * Mirrors `canReadForm`: owning the form is enough, and reaching into somebody
+ * else's responses needs moderation rights.
+ */
+export function canReadSubmissions(actor: Actor, formOwnerId: string): boolean {
+  if (!isActive(actor)) return false;
+  if (formOwnerId === actor.id) return can(actor.role, "submission:readOwn");
+  return can(actor.role, "submission:readAny");
 }
 
 /** Human-readable reason, for an API response or a disabled button's title. */

@@ -10,6 +10,15 @@ build plan. Read it before changing anything structural.
 
 ## Status
 
+**Slice 5 — publish and fill.** Publish from the builder: it snapshots the
+draft into an immutable version and mints an unguessable share link. Anyone
+with the link fills the form in at `/f/<slug>`, on the same A4 coordinates it
+was designed on, with live validation and conditional fields. Answers are saved
+to the device as you type and survive a refresh. Submitting is idempotent, rate
+limited and re-validated on the server. `/forms/[id]/responses` shows the
+versions, their links (revocable) and every response, each rendered against the
+version it was filled against.
+
 **Slice 4 — accounts and access.** Sign in with an emailed link. `/members` is
 the dashboard: invite people as user, moderator or admin, change roles, suspend,
 remove, transfer ownership. Only invited addresses can sign in; the first
@@ -24,7 +33,7 @@ and a page strip: drag to create, move, resize, rotate, multi-select, marquee,
 restack, nudge, duplicate, copy/paste, snap to a grid and to neighbours, zoom
 and pan, edit every property, manage pages, upload a logo — all undoable.
 
-Next is Slice 5: publishing a form as a shareable link, and filling it in.
+Next is Slice 6: rendering a submission to a pixel-accurate PDF.
 
 Behind it: `packages/schema` defines what a form document is (Slice 1), and
 `<FormRenderer />` draws one — the builder reuses that renderer rather than
@@ -33,14 +42,28 @@ having its own, so the canvas shows exactly what the PDF will.
 - [`/members`](http://localhost:3000/members) — who is in the workspace
 - [`/forms`](http://localhost:3000/forms) — your forms
 - [`/forms/[id]`](http://localhost:3000/forms) — the builder for one form
+- `/forms/[id]/responses` — published versions, share links, responses
+- `/f/<slug>` — the public fill page (no sign-in; the link is the access)
 - [`/`](http://localhost:3000/) — the read-only renderer, at two scales
 - [`/health`](http://localhost:3000/health) — environment check
 
 The library and builder need the database; `/` does not. Edits autosave about a
 second after you stop, and the toolbar says when they landed — if it says
 otherwise, believe it. Uploaded images go to `.uploads/` on disk and are served
-from `/api/uploads/<key>`; Slice 5 swaps that for Cloudflare R2 without touching
+from `/api/uploads/<key>`; Slice 6 swaps that for Cloudflare R2 without touching
 any stored document.
+
+### Trying the fill flow
+
+Open a form, press **Publish**, copy the link from the dialog, and open it in a
+private window — there is no sign-in on a fill page. Try leaving a required
+field blank (an error summary appears at the top and each field says what is
+wrong), and set **Country** to _Other_ to watch a conditional field appear.
+Submit, then look at **Responses** in the builder toolbar.
+
+Then edit a field's label in the builder and reload the share link: it still
+shows the old label. That is architecture rule 4 — a published version never
+changes, so a response filled last month still renders exactly as it was asked.
 
 ## Requirements
 
@@ -59,7 +82,7 @@ pnpm dev                        # http://localhost:3000
 ```
 
 Open [`/forms`](http://localhost:3000/forms) and make one. `/` renders the
-sample document and needs no database. `/health` should report **Connected. 7
+sample document and needs no database. `/health` should report **Connected. 11
 tables** and a dev user of `dev@formcraft.local`; if it reports "Not reachable",
 Postgres isn't up — run `pnpm db:up` and reload.
 
@@ -92,7 +115,7 @@ create database formcraft owner formcraft;
 
 ```
 apps/web/
-  src/app/                     routes — /forms, /forms/[id], /, /health, /api/*
+  src/app/                     routes — /forms, /f/[slug], /, /health, /api/*
   src/components/renderer/     <FormRenderer />, page surface, element views
   src/builder/
     store/                     state, command stack, undo/redo
@@ -103,11 +126,13 @@ apps/web/
     palette/  keyboard/  persistence/   autosave lives in persistence/
   src/library/                 the "My forms" grid
   src/members/                 the members dashboard
+  src/fill/                    the public fill page: live controls, draft resume
+  src/server/publish/          slugs, publish checks, link lookup, rate limiting
   src/auth.ts                  Auth.js configuration
   src/server/auth/             permissions (pure), session, guards
   src/server/forms/            queries and mutations, permission-checked
   src/server/members/          member management
-  src/lib/storage/             object storage (local disk; R2 at Slice 5)
+  src/lib/storage/             object storage (local disk; R2 at Slice 6)
   src/db/                      Drizzle schema, client, migrations, migrate script
 packages/schema/               the form document schema and pure document
                                operations — shared by builder, renderer, PDF

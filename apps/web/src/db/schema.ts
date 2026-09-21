@@ -331,6 +331,34 @@ export const uploads = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// rate_limits
+// ---------------------------------------------------------------------------
+
+/**
+ * A fixed-window counter, keyed by whatever is being limited.
+ *
+ * Architecture rule 6 requires rate limiting on public fill pages, and this app
+ * is a handful of Next.js instances behind one Postgres — an in-memory counter
+ * would reset on every deploy and be wrong the moment there are two processes.
+ * The database is already the thing all of them agree about.
+ *
+ * Rows are disposable. The key encodes both the bucket and the window
+ * (`submit:<linkId>:<epochMinute>`), so a window that has passed is simply a row
+ * nobody reads again; a periodic delete keeps the table small.
+ */
+export const rateLimits = pgTable(
+  "rate_limits",
+  {
+    /** `<bucket>:<subject>:<window start, epoch seconds>`. */
+    key: text("key").primaryKey(),
+    count: integer("count").notNull().default(0),
+    /** When this row stops meaning anything and may be deleted. */
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [index("rate_limits_expires_at_idx").on(table.expiresAt)],
+);
+
+// ---------------------------------------------------------------------------
 // email_log
 // ---------------------------------------------------------------------------
 

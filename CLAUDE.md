@@ -317,6 +317,74 @@ decided and why.
   restrictive CSP and `nosniff`, because an uploaded SVG is script-capable.
 - **2026-09-18 — Page thumbnails render the document through `PageSurface`,**
   not screenshots. Slice 3's library grid reuses the same mechanism.
+- **2026-09-21 — Slugs are 22 characters of a 29-symbol alphabet (~107 bits).**
+  Rule 6 makes the URL the access control, so it has to be beyond enumeration.
+  The alphabet drops `0/O`, `1/l/I`, vowels and `u/v`, so a slug read off a
+  printed page cannot land on a _different_ valid form; lower case only,
+  because URLs are not reliably case-preserved by everything that touches them.
+- **2026-09-21 — Every reason a link won't open is the same message and the
+  same 404.** Distinguishing "expired" from "never existed" tells a stranger
+  which slugs are real, which is an enumeration oracle. The distinctions exist
+  in `LinkRefusal` for the owner's UI and for tests.
+- **2026-09-21 — A hidden field's answer is dropped and never validated.**
+  Otherwise a required question nobody can see blocks the form forever, and a
+  value typed before a condition turned against it gets submitted invisibly.
+  The evaluator resolves to a fixed point, because hiding A hides B that
+  depends on A.
+- **2026-09-21 — Circular conditional rules are detected explicitly, not left
+  to the iteration cap.** Two fields conditioned on each other _settle_
+  perfectly well at "both hidden", so no loop ever happens — the questions just
+  quietly vanish. `findCycles` walks the (out-degree one) dependency graph and
+  reports them as `broken`, which renders them visible. A silently missing
+  question is not something anybody debugs.
+- **2026-09-21 — `validateAnswers` builds its result up from the document, not
+  down from the request.** A key that is not a question in this form — from a
+  tampered request or a tab open since before an edit — therefore cannot reach
+  storage at all. The request says what was answered; the document says what
+  was asked.
+- **2026-09-21 — A signature is a PNG data URL, and the server caps it.**
+  Uploading to object storage would make it the only answer that can fail to
+  save _after_ the form is otherwise complete; storing stroke coordinates would
+  need a second renderer in the PDF worker, which is what rule 2 exists to
+  prevent. One string that both an `<img>` and headless Chromium draw
+  identically. Its prefix and length are checked server-side, and again where
+  it is rendered.
+- **2026-09-21 — The fill page removes hidden elements from the DOM rather
+  than hiding them with CSS.** A `display: none` field is still submitted by
+  some browsers and still reachable by some screen readers. Removing it is the
+  only version where what is asked, what is announced and what is stored agree.
+- **2026-09-21 — Rate limiting is a fixed window in Postgres, incremented in
+  one statement.** Read-then-write races two concurrent submits straight past
+  the limit, which is the case that matters. In-memory would reset on deploy
+  and be wrong with two processes. A fixed window admits up to 2x across a
+  boundary — a rounding error against storing every attempt.
+- **2026-09-21 — Turnstile is written in full and off unless both keys are
+  set, and fails closed.** `challenges.cloudflare.com` is refused by this
+  container's network policy, so a wired-up widget would make every fill page
+  unusable here and a stub that pretended to verify would be worse. An
+  anti-abuse check that disables itself under strain is not a check.
+- **2026-09-21 — Idempotency keys are namespaced by link.** The unique index is
+  global, so without the prefix one person's key could collide with another's
+  on a different form, and a key from one link could resolve a submission on
+  another.
+- **2026-09-21 — A link use is claimed after validation and before the insert.**
+  A rejected submission must not burn a use, and a one-use link must not take
+  two — so the counter is incremented conditionally on its own cap in a single
+  statement.
+- **2026-09-21 — The fill draft is localStorage, read through
+  `useSyncExternalStore`.** Server-side drafts would mean an unauthenticated
+  write endpoint holding partial answers for anyone who opens a link. The hook
+  is the one that gets the hydration boundary right; its snapshot is cached
+  because React compares by identity and a freshly parsed object each call is
+  an infinite render loop.
+- **2026-09-21 — Publishing is refused for an unlabelled field, an empty
+  choice list, a dangling condition or duplicate ids.** A version is immutable,
+  so these cannot be fixed after the link is circulating — and an unlabelled
+  control is the commonest way to fail the WCAG 2.2 AA bar the brief sets.
+- **2026-09-21 — `submission:readOwn` sits at `user`.** `submission:readAny`
+  starts at moderator, so without it somebody could publish a form and never
+  see a single reply to it. Reading _other people's_ responses is moderation;
+  reading your own is what publishing is for.
 - **2026-09-21 — Ownership goes through `currentOwnerId()`.** It returns the
   hardcoded dev user today, so the owner filter on every query is currently a
   formality — which is exactly why it is written now. Adding auth becomes a

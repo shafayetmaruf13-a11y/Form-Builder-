@@ -8,6 +8,7 @@ import {
   can,
   canActOnMember,
   canReadForm,
+  canReadSubmissions,
   canSetRole,
   canTransferOwnership,
   canWriteForm,
@@ -296,5 +297,32 @@ describe("form access", () => {
       expect(canReadForm(actor(role), "someone_else"), role).toBe(true);
       expect(canWriteForm(actor(role), "someone_else"), role).toBe(true);
     }
+  });
+});
+
+describe("submission access", () => {
+  it("lets anyone read the responses to their own form", () => {
+    // The gap this closes: `submission:readAny` starts at moderator, so
+    // without `submission:readOwn` a plain user could publish a form and never
+    // see a single reply to it.
+    for (const role of ROLES) {
+      const self = actor(role);
+      expect(canReadSubmissions(self, self.id), role).toBe(true);
+    }
+  });
+
+  it("keeps a user out of someone else's responses", () => {
+    expect(canReadSubmissions(actor("user"), "someone_else")).toBe(false);
+  });
+
+  it("lets a moderator and above in, which is what moderation is", () => {
+    for (const role of ["moderator", "admin", "owner"] as const) {
+      expect(canReadSubmissions(actor(role), "someone_else"), role).toBe(true);
+    }
+  });
+
+  it("refuses a suspended owner their own responses", () => {
+    const suspended = actor("owner", { status: "suspended" });
+    expect(canReadSubmissions(suspended, suspended.id)).toBe(false);
   });
 });

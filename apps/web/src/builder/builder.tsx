@@ -42,6 +42,7 @@ import { ElementPalette, paletteTypeFromId } from "./palette/element-palette";
 import { SaveStatus } from "./persistence/save-status";
 import { type SaveState, useAutosave } from "./persistence/use-autosave";
 import { PropertiesPanel } from "./properties/properties-panel";
+import { PublishButton } from "./publish/publish-button";
 import { BuilderStore } from "./store/builder-store";
 import {
   addElementCommand,
@@ -260,7 +261,7 @@ function BuilderShell({
       }}
     >
       <div className="flex h-dvh flex-col">
-        <BuilderToolbar saveState={saveState} />
+        <BuilderToolbar saveState={saveState} formId={formId} />
         <div className="flex min-h-0 flex-1">
           <ElementPalette />
           <div className="flex min-w-0 flex-1 flex-col">
@@ -409,7 +410,13 @@ function useSpaceKey(setHeld: (held: boolean) => void) {
   }, [setHeld]);
 }
 
-function BuilderToolbar({ saveState }: { saveState: SaveState }) {
+function BuilderToolbar({
+  saveState,
+  formId,
+}: {
+  saveState: SaveState;
+  formId: string;
+}) {
   const store = useBuilderStore();
   const document = useDocument();
   const selection = useSelection();
@@ -542,6 +549,20 @@ function BuilderToolbar({ saveState }: { saveState: SaveState }) {
         >
           Load sample
         </ToolbarButton>
+
+        <Link
+          href={`/forms/${formId}/responses`}
+          className="rounded border border-black/10 px-2 py-1 text-xs hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
+        >
+          Responses
+        </Link>
+
+        <PublishButton
+          formId={formId}
+          // Publishing snapshots what the *server* has stored, so a publish
+          // during an in-flight save would miss the last edit.
+          saving={saveState.status === "saving"}
+        />
       </div>
     </header>
   );
