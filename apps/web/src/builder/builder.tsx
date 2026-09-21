@@ -3,9 +3,9 @@
 import {
   ELEMENT_LABELS,
   type ElementType,
+  type FormDocument,
   type ZDirection,
   createElement,
-  emptyDocument,
   sampleDocument,
 } from "@formcraft/schema";
 import {
@@ -18,6 +18,7 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
+import Link from "next/link";
 import { nanoid } from "nanoid";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -38,13 +39,15 @@ import {
 import { useBuilderShortcuts } from "./keyboard/use-shortcuts";
 import { PageStrip } from "./pages/page-strip";
 import { ElementPalette, paletteTypeFromId } from "./palette/element-palette";
-import { useDraftPersistence } from "./persistence/use-draft";
+import { SaveStatus } from "./persistence/save-status";
+import { type SaveState, useAutosave } from "./persistence/use-autosave";
 import { PropertiesPanel } from "./properties/properties-panel";
 import { BuilderStore } from "./store/builder-store";
 import {
   addElementCommand,
   moveElementsCommand,
   reorderZCommand,
+  setDocumentCommand,
 } from "./store/commands";
 import {
   BuilderStoreProvider,
@@ -57,23 +60,25 @@ import {
   useSnapEnabled,
 } from "./store/use-builder";
 
-/**
- * Ids for the starting document are fixed rather than generated: they appear in
- * rendered `data-` attributes, so a `nanoid()` here would differ between server
- * and client renders and trip hydration. Element ids are still nanoids, minted
- * only in response to a gesture.
- */
-const INITIAL_DOCUMENT_ID = "doc_draft";
-const INITIAL_PAGE_ID = "page_1";
-
-export function Builder() {
-  const [store] = useState(
-    () => new BuilderStore(emptyDocument(INITIAL_DOCUMENT_ID, INITIAL_PAGE_ID)),
-  );
+export function Builder({
+  formId,
+  initialDocument,
+  initialUpdatedAt,
+}: {
+  formId: string;
+  /** Loaded on the server, so the canvas is right on first paint. */
+  initialDocument: FormDocument;
+  initialUpdatedAt: string;
+}) {
+  const [store] = useState(() => new BuilderStore(initialDocument));
 
   return (
     <BuilderStoreProvider value={store}>
-      <BuilderShell store={store} />
+      <BuilderShell
+        store={store}
+        formId={formId}
+        initialUpdatedAt={initialUpdatedAt}
+      />
     </BuilderStoreProvider>
   );
 }
@@ -85,13 +90,21 @@ interface MoveContext {
   candidates: SnapCandidates;
 }
 
-function BuilderShell({ store }: { store: BuilderStore }) {
+function BuilderShell({
+  store,
+  formId,
+  initialUpdatedAt,
+}: {
+  store: BuilderStore;
+  formId: string;
+  initialUpdatedAt: string;
+}) {
   const pageRef = useRef<HTMLDivElement | null>(null);
   const moveContext = useRef<MoveContext | null>(null);
   const [draggingType, setDraggingType] = useState<ElementType | null>(null);
 
   useBuilderShortcuts();
-  useDraftPersistence(store);
+  const saveState = useAutosave(store, formId, initialUpdatedAt);
 
   const sensors = useSensors(
     // A few pixels of movement before a drag starts, so a plain click selects
@@ -247,7 +260,7 @@ function BuilderShell({ store }: { store: BuilderStore }) {
       }}
     >
       <div className="flex h-dvh flex-col">
-        <BuilderToolbar />
+        <BuilderToolbar saveState={saveState} />
         <div className="flex min-h-0 flex-1">
           <ElementPalette />
           <div className="flex min-w-0 flex-1 flex-col">
@@ -396,7 +409,7 @@ function useSpaceKey(setHeld: (held: boolean) => void) {
   }, [setHeld]);
 }
 
-function BuilderToolbar() {
+function BuilderToolbar({ saveState }: { saveState: SaveState }) {
   const store = useBuilderStore();
   const document = useDocument();
   const selection = useSelection();
@@ -418,8 +431,10 @@ function BuilderToolbar() {
 
   return (
     <header className="flex flex-wrap items-center gap-3 border-b border-black/10 px-4 py-2 text-sm dark:border-white/15">
-      <span className="font-semibold">Formcraft</span>
-      <span className="opacity-50">Slice 2c</span>
+      <Link href="/forms" className="font-semibold hover:underline">
+        Formcraft
+      </Link>
+      <SaveStatus state={saveState} />
 
       <Divider />
 
@@ -512,17 +527,20 @@ function BuilderToolbar() {
           {elementCount} element{elementCount === 1 ? "" : "s"}
           {selection.length > 0 && ` · ${selection.length} selected`}
         </span>
-        <ToolbarButton onClick={() => store.replaceDocument(sampleDocument)}>
-          Load sample
-        </ToolbarButton>
         <ToolbarButton
-          onClick={() =>
-            store.replaceDocument(
-              emptyDocument(INITIAL_DOCUMENT_ID, INITIAL_PAGE_ID),
-            )
-          }
+          title="Replace this form's contents with the sample document"
+          onClick={() => {
+            const current = store.getState().document;
+            store.dispatch(
+              setDocumentCommand(current, {
+                ...sampleDocument,
+                // Keep this form's own identity; only the contents change.
+                id: current.id,
+              }),
+            );
+          }}
         >
-          Clear
+          Load sample
         </ToolbarButton>
       </div>
     </header>

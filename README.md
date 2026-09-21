@@ -10,26 +10,31 @@ build plan. Read it before changing anything structural.
 
 ## Status
 
-**Slice 2 complete — the builder.** `/builder` gives you a palette, a canvas, a
-properties panel and a page strip. Drag to create, move, resize, rotate,
-multi-select, marquee, restack, nudge, duplicate, copy/paste, snap to a grid and
-to neighbours, zoom and pan. Edit every property of a selected element, manage
-multiple pages, and upload a logo. All of it undoable.
+**Slice 3 — saved forms.** Forms live in the database. `/forms` is the library:
+thumbnail grid, search, rename, duplicate, delete, last-edited. `/forms/[id]` is
+the builder, autosaving as you work.
 
-Next is Slice 3: saving forms to the server, autosave and a "My Forms" library.
+The builder itself (Slice 2) gives you a palette, a canvas, a properties panel
+and a page strip: drag to create, move, resize, rotate, multi-select, marquee,
+restack, nudge, duplicate, copy/paste, snap to a grid and to neighbours, zoom
+and pan, edit every property, manage pages, upload a logo — all undoable.
+
+Next is Slice 4: publishing a form as a shareable link, and filling it in.
 
 Behind it: `packages/schema` defines what a form document is (Slice 1), and
 `<FormRenderer />` draws one — the builder reuses that renderer rather than
 having its own, so the canvas shows exactly what the PDF will.
 
+- [`/forms`](http://localhost:3000/forms) — your forms
+- [`/forms/[id]`](http://localhost:3000/forms) — the builder for one form
 - [`/`](http://localhost:3000/) — the read-only renderer, at two scales
-- [`/builder`](http://localhost:3000/builder) — the builder
 - [`/health`](http://localhost:3000/health) — environment check
 
-Nothing is saved to the server yet (Slice 3). A localStorage draft stands in, so
-a refresh does not lose work. Uploaded images go to `.uploads/` on disk and are
-served from `/api/uploads/<key>`; Slice 5 swaps that for Cloudflare R2 without
-touching any stored document.
+The library and builder need the database; `/` does not. Edits autosave about a
+second after you stop, and the toolbar says when they landed — if it says
+otherwise, believe it. Uploaded images go to `.uploads/` on disk and are served
+from `/api/uploads/<key>`; Slice 5 swaps that for Cloudflare R2 without touching
+any stored document.
 
 ## Requirements
 
@@ -47,9 +52,10 @@ pnpm db:migrate                 # applies migrations, seeds the dev user
 pnpm dev                        # http://localhost:3000
 ```
 
-`/` renders the sample document and needs no database. `/health` should report
-**Connected. 7 tables** and a dev user of `dev@formcraft.local`; if it reports
-"Not reachable", Postgres isn't up — run `pnpm db:up` and reload.
+Open [`/forms`](http://localhost:3000/forms) and make one. `/` renders the
+sample document and needs no database. `/health` should report **Connected. 7
+tables** and a dev user of `dev@formcraft.local`; if it reports "Not reachable",
+Postgres isn't up — run `pnpm db:up` and reload.
 
 ### Without Docker
 
@@ -80,7 +86,7 @@ create database formcraft owner formcraft;
 
 ```
 apps/web/
-  src/app/                     routes — /, /builder, /health
+  src/app/                     routes — /forms, /forms/[id], /, /health, /api/*
   src/components/renderer/     <FormRenderer />, page surface, element views
   src/builder/
     store/                     state, command stack, undo/redo
@@ -88,7 +94,9 @@ apps/web/
     canvas/                    page + interaction overlay
     properties/                the right-hand panel and its controls
     pages/                     the page strip
-    palette/  keyboard/  persistence/
+    palette/  keyboard/  persistence/   autosave lives in persistence/
+  src/library/                 the "My forms" grid
+  src/server/forms/            owner-scoped queries and mutations
   src/lib/storage/             object storage (local disk; R2 at Slice 5)
   src/db/                      Drizzle schema, client, migrations, migrate script
 packages/schema/               the form document schema and pure document
@@ -131,6 +139,7 @@ elements out.
 ## Authentication
 
 There isn't any yet. Everything is owned by one hardcoded dev user seeded by
-`pnpm db:migrate` (`DEV_USER_ID` / `DEV_USER_EMAIL`). **Do not deploy this
+`pnpm db:migrate` (`DEV_USER_ID` / `DEV_USER_EMAIL`), resolved in one place —
+`currentOwnerId()` in `src/server/forms/queries.ts`. **Do not deploy this
 publicly as-is.** Choosing an auth provider is a decision still to be made; see
 the decisions log in CLAUDE.md.

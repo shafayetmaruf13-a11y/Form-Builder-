@@ -1,18 +1,12 @@
-import type { Metadata } from "next";
-
-import { Builder } from "@/builder/builder";
-
-export const metadata: Metadata = {
-  title: "Builder — Formcraft",
-};
+import { redirect } from "next/navigation";
 
 /**
- * Slice 2a: the builder's skeleton.
+ * The standalone builder from Slice 2.
  *
- * Drag a field from the palette onto the page, move it, delete it, undo it.
- * Nothing is persisted to the server yet — Slice 3 owns that; a localStorage
- * draft stands in so a refresh does not lose work.
+ * Every form now lives at `/forms/[id]`, because a builder that saves nowhere
+ * has no reason to exist once saving works. Kept as a redirect so bookmarks and
+ * the Slice 2 notes still land somewhere sensible.
  */
-export default function BuilderPage() {
-  return <Builder />;
+export default function BuilderRedirect() {
+  redirect("/forms");
 }

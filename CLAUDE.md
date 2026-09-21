@@ -305,3 +305,38 @@ decided and why.
   restrictive CSP and `nosniff`, because an uploaded SVG is script-capable.
 - **2026-09-18 — Page thumbnails render the document through `PageSurface`,**
   not screenshots. Slice 3's library grid reuses the same mechanism.
+- **2026-09-21 — Ownership goes through `currentOwnerId()`.** It returns the
+  hardcoded dev user today, so the owner filter on every query is currently a
+  formality — which is exactly why it is written now. Adding auth becomes a
+  change to one function rather than an audit for the query that forgot.
+- **2026-09-21 — Library thumbnails render live from the stored document;
+  `forms.thumbnail_key` stays unused.** "Rendered from the document, not
+  screenshots" is satisfied by rendering, and a stored image would need the
+  headless-Chromium pipeline that Slice 5 brings. The cost is that the list
+  query returns every draft document. Revisit if the library gets slow.
+- **2026-09-21 — Autosave is a route handler; library CRUD are server actions.**
+  Autosave runs from the builder's save loop, which is not React and needs a
+  conflict reported back rather than a re-render. The rest are invoked from
+  forms and buttons, where `revalidatePath` does the work.
+- **2026-09-21 — Autosave carries the `updatedAt` it last saw, and a mismatch
+  is a 409.** Two tabs on one form would otherwise silently overwrite each
+  other. On conflict the client stops saving and says so rather than retrying,
+  because retrying _is_ the silent overwrite.
+- **2026-09-21 — No localStorage mirror of the draft.** The store is the truth
+  while the tab is open, the server between sessions. A third copy that can
+  disagree with both on load is worse than the problem it solves. On a failed
+  save the builder shows a persistent error and `beforeunload` warns. Offline
+  buffering is a real feature and deserves its own design, not a smuggled-in
+  one.
+- **2026-09-21 — Undo history is session-scoped.** It is not persisted across a
+  reload, and "undo always works" in the quality bar means within a session.
+  Persisting a command stack is a much larger feature than it looks.
+- **2026-09-21 — Duplicating a form keeps its element ids.** Ids only have to be
+  unique within a document, and answers resolve against the version they were
+  filled against, so two documents sharing ids confuses nothing.
+- **2026-09-21 — Deleting a form cascades to its versions and every submission
+  against them.** The confirmation states the counts rather than asking "are you
+  sure". If that turns out to be too sharp an edge, soft delete is a schema
+  change, not a UI one.
+- **2026-09-21 — `/builder` redirects to `/forms`.** A builder that saves
+  nowhere has no reason to exist once saving works.

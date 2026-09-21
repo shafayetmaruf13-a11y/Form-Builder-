@@ -273,6 +273,26 @@ export function updatePageCommand(
   };
 }
 
+/**
+ * Replaces the whole document, undoably.
+ *
+ * Used by "Load sample". Before forms were saved this was a plain
+ * `replaceDocument`, which wiped the history — acceptable for a scratch canvas,
+ * not for something that autosaves to a row someone cares about.
+ */
+export function setDocumentCommand(
+  before: FormDocument,
+  after: FormDocument,
+  label = "Replace contents",
+): Command {
+  return {
+    label,
+    mergeKey: null,
+    redo: () => after,
+    undo: () => before,
+  };
+}
+
 export function setTitleCommand(before: string, after: string): Command {
   return {
     label: "Rename form",
