@@ -3,19 +3,16 @@ import { and, desc, eq, ilike } from "drizzle-orm";
 
 import { db } from "@/db";
 import { forms } from "@/db/schema";
-import { env } from "@/env";
+import { can, canReadForm } from "@/server/auth/permissions";
+import { requireUser } from "@/server/auth/session";
 
 /**
- * Reads of the current owner's forms.
+ * Reads of forms the current user may see.
  *
- * Every query filters by owner. There is one hardcoded dev user today, so that
- * filter is currently a formality — which is exactly why it has to be written
- * now. Adding auth later becomes a change to `currentOwnerId()` rather than an
- * audit of every query for the one that forgot.
+ * Visibility follows the role: your own always, everyone's if you are an admin
+ * or the owner. A moderator deliberately sees no more than a plain user here —
+ * they police responses, not other people's designs.
  */
-function currentOwnerId(): string {
-  return env.DEV_USER_ID;
-}
 
 export interface FormSummary {
   id: string;
@@ -28,9 +25,14 @@ export interface FormSummary {
   document: FormDocument;
 }
 
-/** The owner's forms, most recently edited first. */
+/** Forms the current user may see, most recently edited first. */
 export async function listForms(query?: string): Promise<FormSummary[]> {
-  const filters = [eq(forms.ownerId, currentOwnerId())];
+  const actor = await requireUser();
+
+  // An admin's library is everyone's forms; everybody else sees their own.
+  const filters = can(actor.role, "form:readAny")
+    ? []
+    : [eq(forms.ownerId, actor.id)];
   // ilike, so search is case-insensitive without a functional index.
   if (query?.trim()) filters.push(ilike(forms.title, `%${query.trim()}%`));
 
@@ -42,7 +44,7 @@ export async function listForms(query?: string): Promise<FormSummary[]> {
       draftDocument: forms.draftDocument,
     })
     .from(forms)
-    .where(and(...filters))
+    .where(filters.length > 0 ? and(...filters) : undefined)
     .orderBy(desc(forms.updatedAt));
 
   return rows.flatMap((row) => {
@@ -65,19 +67,21 @@ export async function listForms(query?: string): Promise<FormSummary[]> {
 export interface StoredForm {
   id: string;
   title: string;
+  ownerId: string;
   updatedAt: Date;
   document: FormDocument;
 }
 
-/** One form, or null if it does not exist or is not this owner's. */
+/** One form, or null if it does not exist or the caller may not see it. */
 export async function getForm(id: string): Promise<StoredForm | null> {
-  const [row] = await db
-    .select()
-    .from(forms)
-    .where(and(eq(forms.id, id), eq(forms.ownerId, currentOwnerId())))
-    .limit(1);
+  const actor = await requireUser();
 
+  const [row] = await db.select().from(forms).where(eq(forms.id, id)).limit(1);
+
+  // Not-found and not-yours are deliberately the same answer: telling somebody
+  // a form exists but is not theirs is itself a disclosure.
   if (!row) return null;
+  if (!canReadForm(actor, row.ownerId)) return null;
 
   const parsed = formDocumentSchema.safeParse(row.draftDocument);
   if (!parsed.success) return null;
@@ -85,19 +89,18 @@ export async function getForm(id: string): Promise<StoredForm | null> {
   return {
     id: row.id,
     title: row.title,
+    ownerId: row.ownerId,
     updatedAt: row.updatedAt,
     document: parsed.data,
   };
 }
 
-/** Existing titles, used to number a duplicate without colliding. */
-export async function listTitles(): Promise<string[]> {
+/** The caller's own titles, used to number a duplicate without colliding. */
+export async function listTitles(ownerId: string): Promise<string[]> {
   const rows = await db
     .select({ title: forms.title })
     .from(forms)
-    .where(eq(forms.ownerId, currentOwnerId()));
+    .where(eq(forms.ownerId, ownerId));
 
   return rows.map((row) => row.title);
 }
-
-export { currentOwnerId };

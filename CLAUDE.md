@@ -19,6 +19,7 @@ Fixed. Do not substitute.
 | UI              | Tailwind + shadcn/ui                                        |
 | Dragging        | dnd-kit (**not** react-beautiful-dnd)                       |
 | Fill-time forms | react-hook-form + zod                                       |
+| Authentication  | Auth.js (NextAuth v5) + Drizzle adapter, email sign-in      |
 | PDF rendering   | Playwright (headless Chromium)                              |
 | Spreadsheets    | ExcelJS                                                     |
 | Email           | Resend                                                      |
@@ -72,7 +73,11 @@ validation rules, and a `conditional` rule
 
 ## Data model
 
-- `users`
+- `users` — email, name, **role** (`user` | `moderator` | `admin` | `owner`),
+  **status** (`invited` | `active` | `suspended`), who invited them. Exactly one
+  owner, enforced by a partial unique index.
+- `accounts`, `sessions`, `verification_tokens` — owned by the Auth.js adapter,
+  pointing at our `users` table so a person is one row with one id
 - `forms` — owner, title, thumbnail key, draft document (jsonb), timestamps
 - `form_versions` — form_id, version number, document (jsonb), published_at
 - `form_links` — form_version_id, slug, optional token, expires_at, max_uses,
@@ -102,17 +107,21 @@ Built **in order**. Each slice must run and be reviewable on its own.
 - **Slice 3 — saved forms.** Draft persistence with autosave. "My Forms"
   library: thumbnail grid, search, rename, duplicate, delete, last-edited.
   Thumbnails rendered from the document, not screenshots.
-- **Slice 4 — publish and fill.** Publish creates an immutable version plus a
+- **Slice 4 — accounts and access.** Auth.js email sign-in, roles over one
+  workspace, and a members dashboard: invite, change role, suspend, remove,
+  transfer ownership. Authorization is ours, in `server/auth/permissions.ts`,
+  not the identity provider's.
+- **Slice 5 — publish and fill.** Publish creates an immutable version plus a
   share link. Public `/f/[slug]` renders a live form with validation and
   conditional logic, saves drafts to localStorage for resume, accepts a
   submission idempotently. Owner sees a submissions table.
-- **Slice 5 — PDF.** Worker route renders a submission's version plus answers
+- **Slice 6 — PDF.** Worker route renders a submission's version plus answers
   through headless Chromium at the same page coordinates, uploads to storage.
   Filled values appear exactly where the designer put the fields.
-- **Slice 6 — Excel.** One workbook per submission, and one sheet of all
+- **Slice 7 — Excel.** One workbook per submission, and one sheet of all
   submissions for a form with input elements as columns. Multi-select and file
   fields handled sensibly.
-- **Slice 7 — email.** PDF to the owner on submission; owner can email any
+- **Slice 8 — email.** PDF to the owner on submission; owner can email any
   submission to a typed address. Resend, bounce webhooks, `email_log`.
   SPF/DKIM/DMARC records are **documented for the owner to add** — never
   configure DNS from here.
@@ -126,9 +135,12 @@ WCAG 2.2 AA accessible and work on a phone.
 
 ## Out of scope for v1
 
-Teams and permissions, payments, a form templates marketplace, integrations,
-webhooks, i18n, analytics. Do not build these. Do not add them "while you're
-in there."
+Payments, a form templates marketplace, integrations, webhooks, i18n,
+analytics. Do not build these. Do not add them "while you're in there."
+
+**Multi-tenant teams** remain out of scope. Roles are in (see Slice 4), but
+over a _single_ workspace: the deployment is the owner's team. Several
+independent organisations in one database is a different product.
 
 ## Working agreement
 
@@ -340,3 +352,41 @@ decided and why.
   change, not a UI one.
 - **2026-09-21 — `/builder` redirects to `/forms`.** A builder that saves
   nowhere has no reason to exist once saving works.
+- **2026-09-21 — Teams and permissions moved into scope, at the owner's
+  request.** Roles over one workspace, not multi-tenant organisations. The
+  out-of-scope list was edited rather than quietly stepped over.
+- **2026-09-21 — Auth.js, not Clerk.** The owner's organisation does not want
+  Clerk. Auth.js is also reachable from the dev container, where every Clerk
+  domain is refused by the network policy — so sign-in can actually be
+  exercised here rather than taken on trust.
+- **2026-09-21 — The identity provider answers "who"; we answer "what they may
+  do".** Roles live on our own `users` row and every check goes through
+  `server/auth/permissions.ts`, which is pure and exhaustively tested. No
+  network call to authorize, and the model is not owned by a vendor.
+- **2026-09-21 — Database sessions, not JWTs.** Demoting an admin has to bite
+  immediately; a JWT would carry the old role until it expired, which for an
+  access-control feature is the entire point missed. `getCurrentUser()` re-reads
+  the row rather than trusting the session's copy, for the same reason.
+- **2026-09-21 — Every server action re-checks permission.** A server action is
+  a public endpoint; the dashboard disabling a button is a courtesy, not a
+  control. The UI asks the same pure rules so a disabled control's tooltip is
+  the exact reason the server would refuse.
+- **2026-09-21 — A workspace is not a signup form.** Only an invited address may
+  sign in; the sole exception is the first account, which claims an ownerless
+  workspace. A row is not an invitation just because it exists — a real one
+  records who sent it, which is what distinguishes it from one the Auth.js
+  adapter created for a stranger. The first cut of this got it wrong and let an
+  uninvited address in; the browser harness caught it.
+- **2026-09-21 — An uninvited address is refused at sign-in, not at
+  redemption.** That allows enumerating who is a member. The alternative —
+  emailing a link to any address on request — makes the app a spam relay, which
+  is worse. Deliberate trade-off.
+- **2026-09-21 — `trustHost` is opt-in in production** (`AUTH_TRUST_HOST`), and
+  on by default only in development. The `Host` header decides where a sign-in
+  link points, so trusting a forged one mails somebody's magic link to an
+  attacker.
+- **2026-09-21 — `AUTH_DEV_BYPASS` signs you in as the seeded dev user,** and is
+  refused in production regardless of its value. An environment variable that
+  turns off authentication is exactly the sort of thing that escapes a laptop.
+- **2026-09-21 — Not-found and not-permitted are the same answer.** Telling
+  somebody a form exists but is not theirs is itself a disclosure.

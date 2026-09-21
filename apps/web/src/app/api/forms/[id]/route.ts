@@ -1,11 +1,11 @@
 import { formDocumentSchema } from "@formcraft/schema";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 import { db } from "@/db";
 import { forms } from "@/db/schema";
+import { canActOnForm } from "@/server/auth/guards";
 import { isStale } from "@/server/forms/naming";
-import { currentOwnerId } from "@/server/forms/queries";
 
 export const runtime = "nodejs";
 
@@ -50,12 +50,17 @@ export async function PATCH(
     );
   }
 
-  const owned = and(eq(forms.id, id), eq(forms.ownerId, currentOwnerId()));
+  // Architecture rule 5: the caller's claim to this form is re-checked here,
+  // not inferred from the fact that the builder was rendered for them.
+  if (!(await canActOnForm(id, "write"))) {
+    // Not-found and not-permitted are the same answer on purpose.
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
   const [current] = await db
     .select({ updatedAt: forms.updatedAt })
     .from(forms)
-    .where(owned)
+    .where(eq(forms.id, id))
     .limit(1);
 
   if (!current) {
@@ -86,7 +91,7 @@ export async function PATCH(
       title: parsed.data.title.slice(0, 200),
       updatedAt,
     })
-    .where(owned);
+    .where(eq(forms.id, id));
 
   // Echoed back so the client's next save can claim it.
   return NextResponse.json({ updatedAt: updatedAt.toISOString() });

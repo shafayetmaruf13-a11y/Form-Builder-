@@ -1,7 +1,7 @@
 "use server";
 
 import { emptyDocument, formDocumentSchema } from "@formcraft/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -9,8 +9,11 @@ import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { formVersions, forms, submissions } from "@/db/schema";
 
+import { canActOnForm } from "@/server/auth/guards";
+import { requirePermission, requireUser } from "@/server/auth/session";
+
 import { copyTitle } from "./naming";
-import { currentOwnerId, listTitles } from "./queries";
+import { listTitles } from "./queries";
 
 /**
  * Library mutations.
@@ -23,12 +26,14 @@ import { currentOwnerId, listTitles } from "./queries";
 
 /** Creates an empty form and opens it. */
 export async function createForm(): Promise<never> {
+  const actor = await requirePermission("form:create");
+
   const id = nanoid();
   const document = emptyDocument(id, nanoid());
 
   await db.insert(forms).values({
     id,
-    ownerId: currentOwnerId(),
+    ownerId: actor.id,
     title: document.title,
     draftDocument: document,
   });
@@ -40,20 +45,19 @@ export async function createForm(): Promise<never> {
 export async function renameForm(id: string, title: string): Promise<void> {
   const trimmed = title.trim().slice(0, 200);
   if (!trimmed) return;
+  if (!(await canActOnForm(id, "write"))) return;
 
-  await db
-    .update(forms)
-    .set({ title: trimmed, updatedAt: new Date() })
-    .where(and(eq(forms.id, id), eq(forms.ownerId, currentOwnerId())));
-
-  // The title lives in the document too, so the renderer and any future PDF
-  // header agree with the library.
+  // One statement: the column and the document's own title move together, so
+  // the library and the renderer can never disagree about what a form is
+  // called.
   await db
     .update(forms)
     .set({
+      title: trimmed,
       draftDocument: sql`jsonb_set(${forms.draftDocument}, '{title}', ${JSON.stringify(trimmed)}::jsonb)`,
+      updatedAt: new Date(),
     })
-    .where(and(eq(forms.id, id), eq(forms.ownerId, currentOwnerId())));
+    .where(eq(forms.id, id));
 
   revalidatePath("/forms");
   revalidatePath(`/forms/${id}`);
@@ -68,10 +72,13 @@ export async function renameForm(id: string, title: string): Promise<void> {
  * would only invent work.
  */
 export async function duplicateForm(id: string): Promise<void> {
+  const actor = await requireUser();
+  if (!(await canActOnForm(id, "read"))) return;
+
   const [source] = await db
     .select()
     .from(forms)
-    .where(and(eq(forms.id, id), eq(forms.ownerId, currentOwnerId())))
+    .where(eq(forms.id, id))
     .limit(1);
 
   if (!source) return;
@@ -80,11 +87,12 @@ export async function duplicateForm(id: string): Promise<void> {
   if (!parsed.success) return;
 
   const newId = nanoid();
-  const title = copyTitle(source.title, await listTitles());
+  // The copy belongs to whoever made it, not to the original's owner.
+  const title = copyTitle(source.title, await listTitles(actor.id));
 
   await db.insert(forms).values({
     id: newId,
-    ownerId: currentOwnerId(),
+    ownerId: actor.id,
     title,
     draftDocument: { ...parsed.data, id: newId, title },
   });
@@ -96,14 +104,9 @@ export async function duplicateForm(id: string): Promise<void> {
 export async function formImpact(
   id: string,
 ): Promise<{ versions: number; submissions: number }> {
-  const owned = and(eq(forms.id, id), eq(forms.ownerId, currentOwnerId()));
-
-  const [form] = await db
-    .select({ id: forms.id })
-    .from(forms)
-    .where(owned)
-    .limit(1);
-  if (!form) return { versions: 0, submissions: 0 };
+  if (!(await canActOnForm(id, "read"))) {
+    return { versions: 0, submissions: 0 };
+  }
 
   const [versionRow] = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -131,9 +134,9 @@ export async function formImpact(
  * sure".
  */
 export async function deleteForm(id: string): Promise<void> {
-  await db
-    .delete(forms)
-    .where(and(eq(forms.id, id), eq(forms.ownerId, currentOwnerId())));
+  if (!(await canActOnForm(id, "write"))) return;
+
+  await db.delete(forms).where(eq(forms.id, id));
 
   revalidatePath("/forms");
 }

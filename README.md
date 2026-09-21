@@ -10,6 +10,11 @@ build plan. Read it before changing anything structural.
 
 ## Status
 
+**Slice 4 — accounts and access.** Sign in with an emailed link. `/members` is
+the dashboard: invite people as user, moderator or admin, change roles, suspend,
+remove, transfer ownership. Only invited addresses can sign in; the first
+account to exist claims the workspace.
+
 **Slice 3 — saved forms.** Forms live in the database. `/forms` is the library:
 thumbnail grid, search, rename, duplicate, delete, last-edited. `/forms/[id]` is
 the builder, autosaving as you work.
@@ -19,12 +24,13 @@ and a page strip: drag to create, move, resize, rotate, multi-select, marquee,
 restack, nudge, duplicate, copy/paste, snap to a grid and to neighbours, zoom
 and pan, edit every property, manage pages, upload a logo — all undoable.
 
-Next is Slice 4: publishing a form as a shareable link, and filling it in.
+Next is Slice 5: publishing a form as a shareable link, and filling it in.
 
 Behind it: `packages/schema` defines what a form document is (Slice 1), and
 `<FormRenderer />` draws one — the builder reuses that renderer rather than
 having its own, so the canvas shows exactly what the PDF will.
 
+- [`/members`](http://localhost:3000/members) — who is in the workspace
 - [`/forms`](http://localhost:3000/forms) — your forms
 - [`/forms/[id]`](http://localhost:3000/forms) — the builder for one form
 - [`/`](http://localhost:3000/) — the read-only renderer, at two scales
@@ -96,7 +102,11 @@ apps/web/
     pages/                     the page strip
     palette/  keyboard/  persistence/   autosave lives in persistence/
   src/library/                 the "My forms" grid
-  src/server/forms/            owner-scoped queries and mutations
+  src/members/                 the members dashboard
+  src/auth.ts                  Auth.js configuration
+  src/server/auth/             permissions (pure), session, guards
+  src/server/forms/            queries and mutations, permission-checked
+  src/server/members/          member management
   src/lib/storage/             object storage (local disk; R2 at Slice 5)
   src/db/                      Drizzle schema, client, migrations, migrate script
 packages/schema/               the form document schema and pure document
@@ -136,10 +146,30 @@ no element ever knows what scale it is being drawn at. That is what makes the
 builder, the fill page and the PDF agree. Do not add a second way to lay
 elements out.
 
-## Authentication
+## Roles and access
 
-There isn't any yet. Everything is owned by one hardcoded dev user seeded by
-`pnpm db:migrate` (`DEV_USER_ID` / `DEV_USER_EMAIL`), resolved in one place —
-`currentOwnerId()` in `src/server/forms/queries.ts`. **Do not deploy this
-publicly as-is.** Choosing an auth provider is a decision still to be made; see
-the decisions log in CLAUDE.md.
+| Role          | Can                                                                    |
+| ------------- | ---------------------------------------------------------------------- |
+| **Owner**     | Everything. Manages admins. The only role that can transfer ownership. |
+| **Admin**     | Manage members, see and edit every form.                               |
+| **Moderator** | See, export and delete responses. Cannot edit forms or members.        |
+| **User**      | Build, edit and publish their own forms.                               |
+
+Exactly one owner exists, enforced by a partial unique index rather than by
+remembering. Ownership moves only by transfer, never by promotion.
+
+Who you are comes from Auth.js. **What you may do is decided by
+`src/server/auth/permissions.ts`** — pure functions, no database, no request,
+exhaustively tested. Every server action re-checks there: the dashboard
+disabling a button is a courtesy, not a control.
+
+### Signing in locally
+
+Sign-in is an emailed link. Without `RESEND_API_KEY`, the link is **printed to
+the dev server's console** — paste it into the browser. Alternatively set
+`AUTH_DEV_BYPASS=true` to be signed in as the seeded dev user; it is refused in
+production whatever its value.
+
+The seeded dev user (`pnpm db:migrate`) is the workspace owner. On a real
+deployment, the first account to sign in claims the workspace; after that,
+only invited addresses can get in.

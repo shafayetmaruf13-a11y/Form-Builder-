@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { Builder } from "@/builder/builder";
+import { getCurrentUser } from "@/server/auth/session";
 import { getForm } from "@/server/forms/queries";
 
 export const dynamic = "force-dynamic";
@@ -30,8 +31,13 @@ export default async function FormBuilderPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const form = await getForm(id);
 
+  // Same reasoning as the library: signed out is a redirect, not a 404.
+  const actor = await getCurrentUser().catch(() => null);
+  if (!actor) redirect("/sign-in");
+
+  const form = await getForm(id);
+  // Not-found and not-permitted are deliberately the same answer.
   if (!form) notFound();
 
   return (

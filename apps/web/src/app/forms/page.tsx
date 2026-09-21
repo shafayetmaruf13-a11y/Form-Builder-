@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { DocumentThumbnail } from "@/library/document-thumbnail";
 import { FormCard } from "@/library/form-card";
 import { SearchBox } from "@/library/search-box";
+import { getCurrentUser } from "@/server/auth/session";
 import { createForm } from "@/server/forms/actions";
 import { listForms } from "@/server/forms/queries";
 
@@ -25,6 +27,12 @@ export default async function FormsPage({
 }) {
   const { q = "" } = await searchParams;
 
+  // Checked before anything else. Letting `listForms` throw and catching it
+  // below would report "the database is down" to somebody who is merely
+  // signed out — which is both wrong and an invitation to stop reading errors.
+  const actor = await getCurrentUser().catch(() => null);
+  if (!actor) redirect("/sign-in");
+
   let forms;
   try {
     forms = await listForms(q);
@@ -37,6 +45,9 @@ export default async function FormsPage({
       <header className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">My forms</h1>
         <div className="ml-auto flex items-center gap-2">
+          <Link href="/members" className="text-sm underline">
+            Members
+          </Link>
           <SearchBox initialQuery={q} />
           <form action={createForm}>
             <button

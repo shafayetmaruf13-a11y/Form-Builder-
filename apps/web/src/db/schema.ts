@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   index,
@@ -5,6 +6,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -37,21 +39,122 @@ const updatedAt = () =>
 // ---------------------------------------------------------------------------
 
 /**
- * Slice 0 seeds exactly one hardcoded dev user and wires no auth provider.
- * `passwordHash` etc. are deliberately absent: whichever provider we adopt
- * later (Auth.js, Clerk, …) brings its own account/session tables, and
- * guessing at their columns now would only create a migration to undo.
+ * Who may do what.
+ *
+ * A single hierarchy over one workspace, not multi-tenant organisations: the
+ * deployment *is* the owner's team. Actual teams stay out of scope.
+ *
+ * Order matters — `ROLES` is ranked from least to most privileged, and the
+ * authorization rules lean on that ordering rather than restating it.
  */
+export const ROLES = ["user", "moderator", "admin", "owner"] as const;
+export type Role = (typeof ROLES)[number];
+
+/**
+ * `invited` means a row exists for an email that has never signed in. It
+ * becomes `active` when someone completes sign-in with that address, which is
+ * how an invitation is redeemed without an outbound email service (that is
+ * Slice 8's job).
+ */
+export const USER_STATUSES = ["invited", "active", "suspended"] as const;
+export type UserStatus = (typeof USER_STATUSES)[number];
+
 export const users = pgTable(
   "users",
   {
     id: id(),
     email: text("email").notNull(),
     name: text("name"),
+    /** Auth.js writes this when an email sign-in link is used. */
+    emailVerified: timestamp("email_verified", { withTimezone: true }),
+    image: text("image"),
+    role: text("role").$type<Role>().notNull().default("user"),
+    status: text("status").$type<UserStatus>().notNull().default("invited"),
+    invitedByUserId: text("invited_by_user_id"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [uniqueIndex("users_email_key").on(table.email)],
+  (table) => [
+    uniqueIndex("users_email_key").on(table.email),
+    index("users_role_idx").on(table.role),
+    /**
+     * Exactly one owner, enforced by the database rather than by remembering.
+     * Transferring ownership has to demote the old owner in the same
+     * transaction, which is precisely the discipline this is here to force.
+     */
+    uniqueIndex("users_single_owner_key")
+      .on(table.role)
+      .where(sql`${table.role} = 'owner'`),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Auth.js
+// ---------------------------------------------------------------------------
+
+/**
+ * Tables the Auth.js Drizzle adapter owns.
+ *
+ * Column names are the adapter's, snake_case where it expects snake_case —
+ * these are not ours to tidy. They point at our own `users` table rather than
+ * one of their own, so a person is one row with one id, and `forms.owner_id`
+ * keeps meaning what it always meant.
+ *
+ * Everything the *application* cares about — role, status — lives on `users`,
+ * not here. Sign-in is identity; what somebody may do is our business.
+ */
+export const accounts = pgTable(
+  "accounts",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    provider: text("provider").notNull(),
+    providerAccountId: text("provider_account_id").notNull(),
+    refresh_token: text("refresh_token"),
+    access_token: text("access_token"),
+    expires_at: integer("expires_at"),
+    token_type: text("token_type"),
+    scope: text("scope"),
+    id_token: text("id_token"),
+    session_state: text("session_state"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.provider, table.providerAccountId] }),
+    index("accounts_user_id_idx").on(table.userId),
+  ],
+);
+
+/**
+ * Database sessions rather than JWTs, deliberately.
+ *
+ * A role change has to take effect immediately — demoting an admin who is
+ * mid-session must actually demote them. With a JWT they would keep their old
+ * claims until it expired, which for an access-control feature is the whole
+ * point missed.
+ */
+export const sessions = pgTable(
+  "sessions",
+  {
+    sessionToken: text("session_token").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    expires: timestamp("expires", { withTimezone: true }).notNull(),
+  },
+  (table) => [index("sessions_user_id_idx").on(table.userId)],
+);
+
+/** Single-use email sign-in tokens. */
+export const verificationTokens = pgTable(
+  "verification_tokens",
+  {
+    identifier: text("identifier").notNull(),
+    token: text("token").notNull(),
+    expires: timestamp("expires", { withTimezone: true }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.identifier, table.token] })],
 );
 
 // ---------------------------------------------------------------------------

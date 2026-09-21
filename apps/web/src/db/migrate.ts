@@ -9,6 +9,8 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Pool } from "pg";
 
+import { eq } from "drizzle-orm";
+
 import { users } from "./schema";
 
 config({ path: ".env", quiet: true });
@@ -31,15 +33,37 @@ async function main(): Promise<void> {
     await migrate(db, { migrationsFolder: "./src/db/migrations" });
     console.log("migrations applied");
 
+    // The dev user is the workspace owner and is active, so a fresh checkout
+    // has somebody who can invite people. A real deployment gets its owner
+    // from whoever signs in first.
     await db
       .insert(users)
       .values({
         id: DEV_USER_ID,
         email: DEV_USER_EMAIL,
         name: "Dev User",
+        role: "owner",
+        status: "active",
       })
       .onConflictDoNothing();
-    console.log(`dev user ready (${DEV_USER_EMAIL})`);
+
+    // An existing row from before roles existed would default to an invited
+    // plain user, which would lock the workspace. Promote it if nobody owns
+    // the workspace yet.
+    const [owner] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.role, "owner"))
+      .limit(1);
+
+    if (!owner) {
+      await db
+        .update(users)
+        .set({ role: "owner", status: "active" })
+        .where(eq(users.id, DEV_USER_ID));
+    }
+
+    console.log(`dev user ready (${DEV_USER_EMAIL}, owner)`);
   } finally {
     await pool.end();
   }
