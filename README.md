@@ -10,6 +10,13 @@ build plan. Read it before changing anything structural.
 
 ## Status
 
+**Slice 7 — Excel.** Every response downloads as a workbook, and a whole
+form's responses download as one sheet — a row each, a column per question,
+with the header frozen and a filter on every column. Dates, numbers and
+checkboxes are stored as real Excel types, so sorting and formulas work.
+Columns are the union of every published version, so a renamed field stays one
+column and a removed one still reports what it collected.
+
 **Slice 6 — PDF.** Every response downloads as a pixel-accurate PDF from the
 **Download** column on the responses table. It renders the submission's own
 version through the same `PageSurface` the builder draws, at A4's exact
@@ -39,7 +46,7 @@ and a page strip: drag to create, move, resize, rotate, multi-select, marquee,
 restack, nudge, duplicate, copy/paste, snap to a grid and to neighbours, zoom
 and pan, edit every property, manage pages, upload a logo — all undoable.
 
-Next is Slice 7: Excel export.
+Next is Slice 8: emailing the PDF to the owner on submission.
 
 Behind it: `packages/schema` defines what a form document is (Slice 1), and
 `<FormRenderer />` draws one — the builder reuses that renderer rather than
@@ -81,6 +88,19 @@ the fields are, because it is the same renderer at the same coordinates.
 Rendering needs a Chromium binary. In development set
 `CHROMIUM_EXECUTABLE_PATH` if Playwright did not download one itself; the dev
 container ships one at `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`.
+
+### Getting a spreadsheet
+
+**Excel** beside each response downloads that one, laid out like the form.
+**Download all as Excel** gives every response as a table — one row each, the
+header frozen, a filter on every column.
+
+The interesting case is a form you have published more than once. Columns are
+the union of every version, so a field you renamed stays a single column under
+its newest name, and a field you deleted still shows the answers it collected,
+with its header tinted to say it is no longer asked. A row is blank in any
+column its own version never had; the **Version** column is what tells you
+which.
 
 ## Requirements
 
@@ -147,6 +167,7 @@ apps/web/
   src/pdf/                     an input element drawn with its answer in it
   src/server/publish/          slugs, publish checks, link lookup, rate limiting
   src/server/pdf/              browser, renderer, object keys, render token
+  src/server/excel/            workbooks, sheet names, export access
   src/auth.ts                  Auth.js configuration
   src/server/auth/             permissions (pure), session, guards
   src/server/forms/            queries and mutations, permission-checked

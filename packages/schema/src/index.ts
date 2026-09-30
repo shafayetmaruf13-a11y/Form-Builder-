@@ -17,3 +17,4 @@ export * from "./fixtures";
 export * from "./answers";
 export * from "./conditions";
 export * from "./validation";
+export * from "./flatten";

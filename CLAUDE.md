@@ -496,6 +496,36 @@ decided and why.
   never asked, so printing an empty box for it would claim it went unanswered.
   The same rule the fill page follows, and now the fourth thing that agrees:
   what is asked, announced, stored and printed.
+- **2026-09-30 — The all-submissions sheet's columns are the union of every
+  version, keyed by element id.** Owner's call. Submissions span versions
+  (rule 4) and a version may add, remove or rename fields. Keying by id
+  (rule 3) means a rename is one column with a new heading rather than two
+  columns with half the data each, and a field removed in a later version
+  still reports the answers it collected — dropping those would be data loss in
+  the one place that is a record. Retired columns are tinted and annotated, and
+  the Version column is what makes a blank legible.
+- **2026-09-30 — Excel cells carry real types.** Dates are Dates, numbers are
+  numbers, a checkbox is a boolean. A column of text dates sorts
+  alphabetically and `=SUM()` over text numbers is zero — the difference
+  between a spreadsheet and a CSV that has been renamed. Dates are parsed at
+  UTC midnight, because a local-midnight `Date` renders as the previous day for
+  anybody west of Greenwich.
+- **2026-09-30 — A choice exports its option _label_, not its stored value.**
+  A sheet is read by people: the answer somebody gave was "United Kingdom";
+  "gb" is a detail of how it is stored. Values that are no longer options fall
+  back to the raw value rather than vanishing.
+- **2026-09-30 — A signature exports as `(signed)` and a file as its
+  filename.** 15KB of base64 in a cell is unusable and an embedded image makes
+  rows unsortable; file bytes cannot go in a cell and an object key would mean
+  nothing to whoever opens the sheet.
+- **2026-09-30 — Column order is reading order, not `z` or document order.**
+  Top to bottom then left to right, with rows within a line of each other
+  treated as one row so two side-by-side fields do not swap over a stray pixel.
+  A free canvas has no inherent column order; this is where one is imposed.
+- **2026-09-30 — A hidden field is omitted from a single submission's
+  workbook, exactly as from its PDF** — the question was never asked, so a
+  blank beside it would claim it went unanswered. The all-submissions sheet
+  cannot do this, since a column must exist if any row answered it.
 - **2026-09-30 — A file answer prints as its filename.** The bytes cannot be
   drawn into an A4 box, and silently omitting an attached document would
   misrepresent the submission. Naming it says what was sent without pretending

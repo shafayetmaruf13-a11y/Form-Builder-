@@ -235,6 +235,51 @@ export async function listSubmissions(
   }));
 }
 
+/**
+ * Every published version's document, newest first.
+ *
+ * The version id travels with the document because a `FormDocument`'s own `id`
+ * is the *form's* id and is identical in every version — so a document cannot
+ * say which version it is, and the Excel export has to know.
+ */
+export async function versionedDocuments(
+  formId: string,
+): Promise<
+  { formVersionId: string; version: number; document: FormDocument }[]
+> {
+  const rows = await db
+    .select({
+      formVersionId: formVersions.id,
+      version: formVersions.version,
+      document: formVersions.document,
+    })
+    .from(formVersions)
+    .where(eq(formVersions.formId, formId))
+    .orderBy(desc(formVersions.version));
+
+  const versions: {
+    formVersionId: string;
+    version: number;
+    document: FormDocument;
+  }[] = [];
+
+  for (const row of rows) {
+    // A version that no longer parses is skipped rather than failing the whole
+    // export: one unreadable old version must not cost the owner every other
+    // response they have.
+    const parsed = formDocumentSchema.safeParse(row.document);
+    if (!parsed.success) continue;
+
+    versions.push({
+      formVersionId: row.formVersionId,
+      version: row.version,
+      document: parsed.data,
+    });
+  }
+
+  return versions;
+}
+
 /** The documents a set of submissions were filled against, by version id. */
 export async function documentsForVersions(
   versionIds: string[],

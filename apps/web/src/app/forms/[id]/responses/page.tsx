@@ -119,9 +119,20 @@ export default async function ResponsesPage({
       </section>
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide opacity-60">
-          Responses
-        </h2>
+        <div className="mb-2 flex items-baseline justify-between gap-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wide opacity-60">
+            Responses
+          </h2>
+
+          {submissions.length > 0 && (
+            <a
+              href={`/api/forms/${id}/xlsx`}
+              className="rounded border border-black/10 px-3 py-1 text-xs hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
+            >
+              Download all as Excel
+            </a>
+          )}
+        </div>
 
         {submissions.length === 0 ? (
           <p className="rounded border border-dashed border-black/15 p-6 text-sm opacity-70 dark:border-white/20">
@@ -139,7 +150,9 @@ export default async function ResponsesPage({
                     Version
                   </th>
                   <th className="p-2 font-semibold">Answers</th>
-                  <th className="whitespace-nowrap p-2 font-semibold">PDF</th>
+                  <th className="whitespace-nowrap p-2 font-semibold">
+                    Download
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -186,14 +199,23 @@ export default async function ResponsesPage({
                         </dl>
                       </td>
                       <td className="whitespace-nowrap p-2">
+                        {/* Plain links, not fetches: the browser's own
+                            download handling beats anything worth rebuilding,
+                            and the first PDF request renders. */}
                         <a
                           href={`/api/submissions/${submission.id}/pdf`}
-                          // A plain link, not a fetch: the browser's own
-                          // download handling is better than anything worth
-                          // rebuilding, and the first request renders.
                           className="underline opacity-70 hover:opacity-100"
                         >
-                          Download
+                          PDF
+                        </a>
+                        <span aria-hidden="true" className="px-1 opacity-30">
+                          ·
+                        </span>
+                        <a
+                          href={`/api/submissions/${submission.id}/xlsx`}
+                          className="underline opacity-70 hover:opacity-100"
+                        >
+                          Excel
                         </a>
                       </td>
                     </tr>
