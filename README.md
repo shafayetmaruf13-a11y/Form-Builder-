@@ -10,6 +10,12 @@ build plan. Read it before changing anything structural.
 
 ## Status
 
+**Slice 6 — PDF.** Every response downloads as a pixel-accurate PDF from the
+**Download** column on the responses table. It renders the submission's own
+version through the same `PageSurface` the builder draws, at A4's exact
+coordinates, so filled values land where the designer put the fields. Rendered
+on first request and cached from then on.
+
 **Slice 5 — publish and fill.** Publish from the builder: it snapshots the
 draft into an immutable version and mints an unguessable share link. Anyone
 with the link fills the form in at `/f/<slug>`, on the same A4 coordinates it
@@ -33,7 +39,7 @@ and a page strip: drag to create, move, resize, rotate, multi-select, marquee,
 restack, nudge, duplicate, copy/paste, snap to a grid and to neighbours, zoom
 and pan, edit every property, manage pages, upload a logo — all undoable.
 
-Next is Slice 6: rendering a submission to a pixel-accurate PDF.
+Next is Slice 7: Excel export.
 
 Behind it: `packages/schema` defines what a form document is (Slice 1), and
 `<FormRenderer />` draws one — the builder reuses that renderer rather than
@@ -64,6 +70,17 @@ Submit, then look at **Responses** in the builder toolbar.
 Then edit a field's label in the builder and reload the share link: it still
 shows the old label. That is architecture rule 4 — a published version never
 changes, so a response filled last month still renders exactly as it was asked.
+
+### Getting a PDF
+
+On **Responses**, the last column downloads the submission as a PDF. The first
+one takes about a second (a browser has to start); after that it is served from
+storage. Put it side by side with the builder — the values sit exactly where
+the fields are, because it is the same renderer at the same coordinates.
+
+Rendering needs a Chromium binary. In development set
+`CHROMIUM_EXECUTABLE_PATH` if Playwright did not download one itself; the dev
+container ships one at `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`.
 
 ## Requirements
 
@@ -127,7 +144,9 @@ apps/web/
   src/library/                 the "My forms" grid
   src/members/                 the members dashboard
   src/fill/                    the public fill page: live controls, draft resume
+  src/pdf/                     an input element drawn with its answer in it
   src/server/publish/          slugs, publish checks, link lookup, rate limiting
+  src/server/pdf/              browser, renderer, object keys, render token
   src/auth.ts                  Auth.js configuration
   src/server/auth/             permissions (pure), session, guards
   src/server/forms/            queries and mutations, permission-checked

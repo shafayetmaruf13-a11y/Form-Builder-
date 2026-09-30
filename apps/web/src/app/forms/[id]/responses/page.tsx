@@ -139,6 +139,7 @@ export default async function ResponsesPage({
                     Version
                   </th>
                   <th className="p-2 font-semibold">Answers</th>
+                  <th className="whitespace-nowrap p-2 font-semibold">PDF</th>
                 </tr>
               </thead>
               <tbody>
@@ -183,6 +184,17 @@ export default async function ResponsesPage({
                             );
                           })}
                         </dl>
+                      </td>
+                      <td className="whitespace-nowrap p-2">
+                        <a
+                          href={`/api/submissions/${submission.id}/pdf`}
+                          // A plain link, not a fetch: the browser's own
+                          // download handling is better than anything worth
+                          // rebuilding, and the first request renders.
+                          className="underline opacity-70 hover:opacity-100"
+                        >
+                          Download
+                        </a>
                       </td>
                     </tr>
                   );

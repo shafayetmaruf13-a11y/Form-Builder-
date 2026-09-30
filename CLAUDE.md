@@ -458,3 +458,45 @@ decided and why.
   turns off authentication is exactly the sort of thing that escapes a laptop.
 - **2026-09-21 — Not-found and not-permitted are the same answer.** Telling
   somebody a form exists but is not theirs is itself a disclosure.
+- **2026-09-30 — The PDF worker navigates to a real page, it does not
+  `setContent()`.** The app's fonts come from `next/font`, self-hosted under
+  `/_next/static/media` with build-generated filenames. Loading
+  `/internal/render/<id>` on our own origin means Chromium is served the same
+  stylesheet, the same `@font-face` rules and the same CSS variables as every
+  other page, by construction. Rebuilding that font CSS by hand from hashes
+  nothing can predict would be a second rendering path — rule 2's failure mode
+  one level down.
+- **2026-09-30 — `/internal/render` is authorised by a per-submission HMAC,
+  not a shared secret.** It has no session, because the browser fetching it is
+  nobody, which makes it an IDOR over every response ever collected if it is
+  ever reachable. The first version held a random token in a module variable;
+  Next compiles a route handler and an RSC page into separate module graphs, so
+  that token existed twice in one process with two different values and nothing
+  ever authenticated. A token derived from `AUTH_SECRET`, the submission id and
+  an expiry has no state to disagree about — and a leaked URL grants one
+  response for two minutes rather than all of them forever.
+- **2026-09-30 — PDFs render on demand and are cached by (submission,
+  version).** Rendering on submit would put a Chromium launch behind the one
+  endpoint strangers can reach. Caching is safe precisely because a version is
+  immutable: rule 4 paying for itself, since otherwise every download would
+  have to re-render to be trustworthy.
+- **2026-09-30 — Page size is passed to `page.pdf` in inches, never px or
+  `format: "A4"`.** 1in is exactly 72pt and a PDF page box is in points, so
+  inches are the one accepted unit that converts without rounding. `794px`
+  yields a box a fraction _shorter_ than the page; `A4` is wrong by definition,
+  since 210x297mm is not 794x1123px at 96dpi. Chromium still quantises the
+  sheet by about half a pixel, which is a hairline of white at the right and
+  bottom — with `scale: 1` the content itself is never stretched, and element
+  placement is asserted separately.
+- **2026-09-30 — Page breaks use `+` on adjacent pages, not `:last-child`.**
+  The framework appends its own script tags to the body, so the final page div
+  is not `:last-child`, kept its break, and printed a trailing blank page. An
+  adjacent-sibling selector only ever matches page divs.
+- **2026-09-30 — A hidden field is absent from the PDF, not blank.** It was
+  never asked, so printing an empty box for it would claim it went unanswered.
+  The same rule the fill page follows, and now the fourth thing that agrees:
+  what is asked, announced, stored and printed.
+- **2026-09-30 — A file answer prints as its filename.** The bytes cannot be
+  drawn into an A4 box, and silently omitting an attached document would
+  misrepresent the submission. Naming it says what was sent without pretending
+  to include it. A signature, already a PNG data URL, prints as the image.
