@@ -622,3 +622,48 @@ decided and why.
   drawn into an A4 box, and silently omitting an attached document would
   misrepresent the submission. Naming it says what was sent without pretending
   to include it. A signature, already a PNG data URL, prints as the image.
+- **2026-10-01 — `db:migrate` does not seed the dev user in production, and
+  takes the owner from `FORMCRAFT_OWNER_EMAIL`.** The seed was unconditional,
+  so the deployment's own migrate container handed every real deployment to
+  `dev@formcraft.local` — a domain that does not exist. The workspace then had
+  an owner, which means the `signIn` gate's bootstrap branch never fires and
+  every genuine address is refused as uninvited, with nobody able to issue an
+  invitation. The app comes up perfectly and is permanently locked, which is
+  why the runbook's "the first account to sign in claims the workspace" was
+  false against its own compose file. `NODE_ENV=production` is set in the
+  Dockerfile's `migrator` stage rather than left to a compose file, because the
+  stage inherits from `deps`, which does not set it, and getting this wrong is
+  not recoverable from the UI.
+- **2026-10-01 — Ownership is settled on the first migration only.** A later
+  `FORMCRAFT_OWNER_EMAIL` is reported and ignored rather than obeyed: exactly
+  one owner exists (partial unique index), ownership moves by transfer, and a
+  script that could reassign it on every deploy is a privilege-escalation
+  primitive for anybody who can edit `.env`.
+- **2026-10-01 — There are two deployment shapes, and the all-in-one is the
+  default.** `docker-compose.server.yml` runs Postgres beside the app;
+  `docker-compose.prod.yml` expects a managed `DATABASE_URL`. The earlier
+  decision — "deployment is a container on an OCI compute instance, with the
+  database managed" — was right for a service and wrong for the environment the
+  owner actually asked for, which is one they can look at and use. OCI's
+  managed PostgreSQL also appears not to be in the Always Free tier, so the
+  original runbook pointed at a paid service for a development environment. The
+  trade-off is explicit in both files: the all-in-one makes Postgres'
+  durability the owner's problem, and the runbook carries the two backup
+  commands that answer it.
+- **2026-10-01 — TLS without a domain, via `sslip.io`.** Caddy needs a
+  hostname to get a certificate and the owner has no domain, which was the hard
+  blocker on ever seeing this running. `<ip-with-dashes>.sslip.io` resolves to
+  that IP from public DNS, so Let's Encrypt issues for it normally. One
+  `--host` flag swaps in a real domain later. The alternative — self-signed or
+  plain HTTP — would mean a browser warning on the page people type personal
+  data into.
+- **2026-10-01 — `deploy/bootstrap.sh` generates secrets and keeps them.** A
+  re-run must not rotate `AUTH_SECRET`: that signs everybody out and
+  invalidates sign-in links in flight, which on a box being iterated on is a
+  weekly event. It reads the existing values back with `sed` rather than
+  sourcing the file, so a character in a generated secret cannot execute. The
+  Postgres password is restricted to alphanumerics because it goes into a
+  `postgres://` URL, where a `/` or `@` would silently truncate the connection
+  string. Public IP comes from the cloud's link-local metadata service first,
+  which no network policy can block and which cannot be wrong about which
+  address is ours.

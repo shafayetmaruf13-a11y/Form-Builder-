@@ -2,6 +2,10 @@
 #
 # .env first: it holds AUTH_SECRET and would otherwise be baked into an image
 # layer, where deleting it later does not remove it.
+# Both spellings: `**/` is documented to match zero directories, so `**/.env`
+# should cover the root one, but that is not a detail to stake a secret on.
+.env
+.env.*
 **/.env
 **/.env.*
 !**/.env.example

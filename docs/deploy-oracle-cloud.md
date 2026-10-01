@@ -1,15 +1,39 @@
-# Deploying Formcraft on Oracle Cloud
+# Deploying Formcraft
 
-**You run these steps.** Nothing in this repository has OCI credentials, and
-standing up a public endpoint that collects other people's form submissions is
-the owner's decision, not a side effect of a build.
+**You run these steps.** Nothing in this repository holds cloud credentials,
+and standing up a public endpoint that collects other people's form
+submissions is the owner's decision, not a side effect of a build.
 
-The shape: one compute instance running two containers, talking to OCI's
-managed PostgreSQL. The application does not change — the database stays
-Postgres via Drizzle, exactly as the stack fixes it. Only `DATABASE_URL` moves.
+Written for an Oracle Cloud compute instance, because that is where this one is
+going. Nothing below is Oracle-specific except §2 — any Ubuntu VM with a public
+IP works the same way.
 
-> Oracle renames things in its console more often than it changes them. Where
-> this says "look for X", trust the console over the exact wording here.
+---
+
+## The short version
+
+On a fresh Ubuntu instance with ports 80 and 443 open:
+
+```bash
+sudo apt-get update && sudo apt-get install -y docker.io docker-compose-v2 git
+sudo usermod -aG docker "$USER" && newgrp docker
+
+git clone -b main-ry1qm3 https://github.com/shafayetmaruf13-a11y/Form-Builder-.git
+cd Form-Builder-
+./deploy/bootstrap.sh you@example.com
+```
+
+That generates the secrets, works out the machine's public IP, and brings up
+Postgres, the app and Caddy. When it finishes it prints the URL — something
+like `https://150-230-44-12.sslip.io` — with a real certificate.
+
+**No domain name and no DNS records.** `sslip.io` is a public resolver that
+maps a hostname containing an IP straight back to that IP, which is all
+Let's Encrypt needs to issue a certificate. Point a real domain at the machine
+later and re-run with `--host forms.example.com`.
+
+Everything after this is what to do when that does not just work, and the
+things worth knowing before the URL reaches anybody else.
 
 ---
 
@@ -18,49 +42,50 @@ Postgres via Drizzle, exactly as the stack fixes it. Only `DATABASE_URL` moves.
 ```
          internet
             │  443
-   ┌────────▼─────────────────────────────┐
-   │ Compute instance (Ampere A1, arm64)  │
-   │                                      │
-   │  caddy ──► app  ──┐                  │
-   │            │      │ loopback         │
-   │            └──────┘ (PDF worker      │
-   │                      fetches its     │
-   │  volume: /data/uploads  own pages)   │
-   └──────────────────┬───────────────────┘
-                      │ private subnet, TLS
-         ┌────────────▼──────────────┐
-         │ OCI Database w/ PostgreSQL│
-         └───────────────────────────┘
+   ┌────────▼──────────────────────────────────┐
+   │ Compute instance (Ampere A1, arm64)       │
+   │                                           │
+   │  caddy ──► app ──► postgres               │
+   │             │        │                    │
+   │             └────────┘ compose network    │
+   │             │  (PDF worker fetches its    │
+   │             └───  own pages over loopback) │
+   │                                           │
+   │  volumes: pgdata, uploads                 │
+   └───────────────────────────────────────────┘
 ```
 
----
+One instance, four containers, nothing else to provision.
 
 ## 1. The instance
 
 **Shape.** Ampere A1 (`VM.Standard.A1.Flex`) is in the Always Free tier and is
-the right choice — but note it is **arm64**. That is fine: the Dockerfile
-installs the distribution's Chromium, which exists for arm64, and the image
-builds natively on the instance.
+the right choice — note it is **arm64**, which is fine: the image installs the
+distribution's Chromium, which exists for arm64, and builds natively on the
+instance.
 
-Give it **at least 2 OCPU and 6 GB**. Not the 1 GB `E2.1.Micro`: a PDF render
-is a headless browser, and it will be killed by the OOM reaper on that shape.
+Give it **at least 2 OCPU and 8 GB**. Not the 1 GB `E2.1.Micro`: `next build`
+alone will exhaust that, and a PDF render is a headless browser that the OOM
+reaper will kill on that shape. The free Ampere allocation is 4 OCPU and 24 GB
+in total, so you can give this one instance all of it.
 
-**Image.** Ubuntu 22.04 or 24.04 (arm64). Oracle Linux works too; the firewall
-commands below differ.
+**Image.** Ubuntu 22.04 or 24.04 (arm64). Oracle Linux works; the firewall
+commands in §2 differ.
 
-**Disk.** The 50 GB boot volume is plenty. Uploaded logos and file answers live
-on a Docker volume on that disk — see §7 about backing it up.
+**Disk.** The 50 GB boot volume is plenty. Both volumes — the database and the
+uploads — live on it, so read §6 before you rely on it.
 
 ## 2. Networking — the step everyone loses an hour to
 
-**Two firewalls, and both must allow the traffic.**
+**Two firewalls, and both must allow the traffic.** This is the single most
+common Oracle Cloud complaint, and it presents as "I opened the ports and it
+still times out".
 
 1. **The VCN security list or NSG**, in the console: add stateful ingress for
    TCP **80** and **443** from `0.0.0.0/0`.
 2. **The instance's own firewall.** Oracle's images ship with iptables rules
-   that drop everything but SSH, and the security list says nothing about them.
-   This is why "I opened the ports and it still times out" is the single most
-   common OCI complaint.
+   that drop everything but SSH, and the console's security list says nothing
+   about them.
 
 On Ubuntu:
 
@@ -77,23 +102,14 @@ sudo firewall-cmd --permanent --add-service=http --add-service=https
 sudo firewall-cmd --reload
 ```
 
-## 3. The database
+Check from your own machine, not from the instance — a NAT'd cloud instance
+often cannot reach its own public address, so testing locally proves nothing:
 
-Create an **OCI Database with PostgreSQL** instance in the **same VCN**, on a
-private subnet. Then:
+```bash
+curl -sv https://<your-ip-with-dashes>.sslip.io/health
+```
 
-- Allow ingress on **5432** from the compute instance's subnet CIDR only. Not
-  from the internet — the app is the only thing that needs to reach it.
-- Create a database named `formcraft` and a role for the app.
-- Connections are TLS. Put `?sslmode=require` in the URL; if you have the CA on
-  the instance, `verify-full` with `sslrootcert=` is better and catches a
-  misdirected connection rather than merely encrypting one.
-
-Nothing in the schema changes. Drizzle's Postgres dialect, `jsonb`, the partial
-unique index enforcing one owner, and the single-statement upserts the rate
-limiter and idempotency depend on all work exactly as they do locally.
-
-## 4. Docker
+## 3. Docker
 
 ```bash
 sudo apt-get update
@@ -102,95 +118,138 @@ sudo usermod -aG docker "$USER"
 newgrp docker     # or log out and back in
 ```
 
-## 5. Deploy
+## 4. Run it
 
 ```bash
 git clone -b main-ry1qm3 https://github.com/shafayetmaruf13-a11y/Form-Builder-.git
 cd Form-Builder-
-
-cp .env.production.example .env.production
-openssl rand -base64 32          # paste into AUTH_SECRET
-$EDITOR .env.production          # DATABASE_URL, FORMCRAFT_DOMAIN, AUTH_URL
+./deploy/bootstrap.sh you@example.com
 ```
 
-Point an **A record** at the instance's public IP and let it propagate _before_
-starting — Caddy asks for a certificate on boot, and Let's Encrypt rate-limits
-repeated failures for the same name.
+The script writes `.env` — secrets generated, `0600`, gitignored — and then
+runs `docker compose -f docker-compose.server.yml up -d --build`. Re-running it
+keeps the existing secrets rather than rotating them, because changing
+`AUTH_SECRET` signs everybody out and invalidates sign-in links in flight.
+
+Useful flags:
+
+| Flag                       | For                                                  |
+| -------------------------- | ---------------------------------------------------- |
+| `--host forms.example.com` | once a real domain points at the machine             |
+| `--env-only`               | write `.env` and stop, to inspect it before starting |
+
+The first build takes a while: Chromium is a large package and `next build` is
+not quick. Watch it with:
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d --build
-```
-
-The `migrate` container applies migrations and exits; the app waits for it to
-finish. First build takes a while on an Ampere instance — Chromium is a large
-package and `next build` is not quick.
-
-```bash
-docker compose -f docker-compose.prod.yml logs -f app
-curl -sf https://forms.example.com/health && echo OK
+docker compose -f docker-compose.server.yml logs -f app
 ```
 
 **The build needs outbound access to `fonts.googleapis.com`.** `next/font`
 downloads the four families at build time and serves them from your own origin
-afterwards. If that is blocked, the build fails — which is the good outcome.
-The bad one is a build that silently falls back and makes every PDF stop
-matching its design.
+afterwards. If that is blocked the build fails, which is the good outcome — the
+bad one is a build that quietly falls back and makes every PDF stop matching
+its design.
 
-## 6. First sign-in
+## 5. Signing in
 
-The first account to sign in claims the workspace and becomes the owner, and
-after that only invited addresses may sign in. So **sign in yourself first**,
-before the URL is shared.
+With `RESEND_API_KEY` unset nothing is emailed: the sign-in link is written to
+the container log instead, and recorded in `email_log` with status `logged`
+rather than `sent`. That is enough to get in.
 
-With no `RESEND_API_KEY`, the sign-in link is written to the container log
-rather than emailed — which is enough to claim the workspace:
+1. Open `https://<host>/sign-in` and enter the address you passed to
+   `bootstrap.sh`.
+2. Read the link out of the log and open it:
 
 ```bash
-docker compose -f docker-compose.prod.yml logs app | grep -A2 "Sign-in link"
+docker compose -f docker-compose.server.yml logs app | grep -A2 'Sign-in link'
 ```
 
-Then configure Resend and the DNS records in [email-dns.md](./email-dns.md).
+That address is already the workspace owner, because the migration step made it
+one. **Ownership is decided on the first migration only** — a later change to
+`FORMCRAFT_OWNER_EMAIL` is reported and ignored, since ownership moves by
+transfer in the members dashboard and nowhere else.
 
-## 7. The things that will bite you later
+If you leave `FORMCRAFT_OWNER_EMAIL` unset, the workspace is created ownerless
+and the first address to sign in claims it. Fine if that is certainly you; a
+giveaway if the URL reaches anybody else first.
 
-**Uploads are on a Docker volume, not in object storage.** `docker compose
-down -v` deletes them, and so does losing the instance. Until `lib/storage`
-gains an R2 implementation, back the volume up:
+Then set up real mail with `RESEND_API_KEY` and `EMAIL_FROM`, and add the DNS
+records in [email-dns.md](./email-dns.md) — which are yours to add, not this
+app's.
+
+## 6. Backups — the thing that will bite you
+
+This shape puts **the database and the uploads on the instance's disk**, in two
+Docker volumes. `docker compose down -v` deletes both, and so does losing the
+instance. That is the explicit trade-off of not running a managed database; see
+the end of this page for the other shape.
 
 ```bash
+# Database
+docker compose -f docker-compose.server.yml exec -T postgres \
+  pg_dump -U formcraft formcraft | gzip > "db-$(date +%F).sql.gz"
+
+# Uploaded logos and file answers
 docker run --rm -v formcraft_uploads:/data -v "$PWD:/backup" alpine \
-  tar czf /backup/uploads-$(date +%F).tar.gz -C /data .
+  tar czf "/backup/uploads-$(date +%F).tar.gz" -C /data .
 ```
 
-**Database backups are the managed service's job — check they are on.** The app
-has no export of its own beyond per-form Excel, and a lost `form_versions` row
-takes every submission that references it (architecture rule 4 cuts both ways).
+Put those two in a cron job and copy the output somewhere off the instance.
+Architecture rule 4 cuts both ways: a lost `form_versions` row takes every
+submission that references it, because a submission is only meaningful against
+the exact version it was filled against.
 
-**Memory.** `mem_limit: 2g` in the compose file stops a runaway render taking
-the host down. If PDF downloads start failing under load, that limit is the
-first thing to look at — and `docker stats` will tell you before your users do.
+**Memory.** `mem_limit: 2g` on the app container stops a runaway render taking
+the host down with it. If PDF downloads start failing under load, that is the
+first thing to look at, and `docker stats` will tell you before your users do.
 
-**Updating:**
+## 7. Updating
 
 ```bash
 git pull
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.server.yml up -d --build
 ```
 
-Migrations run automatically and are idempotent — CI proves that by applying
-them twice on every push.
+Migrations run automatically before the app starts, and are idempotent — CI
+proves that by applying them twice on every push.
 
-## 8. Before you share a link
+## Before you share a link
 
-- [ ] `AUTH_SECRET` is a fresh random value, not the example
-- [ ] You have signed in and claimed the workspace
-- [ ] `https://` works and `http://` redirects to it
-- [ ] Postgres is reachable only from the app's subnet
-- [ ] **Turnstile keys are set** — rule 6 wants them, and a public fill page
-      without them has only rate limiting between it and a patient bot
-- [ ] The uploads volume is being backed up
-- [ ] Database automatic backups are enabled
+- [ ] You have signed in and the members dashboard shows you as owner
+- [ ] `https://` works from a machine that is not the instance
+- [ ] **Turnstile keys are set** — architecture rule 6 wants them, and a public
+      fill page without them has only rate limiting between it and a patient bot
+- [ ] Both backups above are running on a schedule, and restoring one has been
+      tried at least once
 - [ ] SPF, DKIM and DMARC are published if you are sending mail
+- [ ] `docker compose -f docker-compose.server.yml exec postgres env | grep PASSWORD`
+      is not the example value (it is generated, but check)
+
+## The other shape: a managed database
+
+`docker-compose.prod.yml` is the same app with **no Postgres container** — it
+expects `DATABASE_URL` to point at a managed service, so backups, restores,
+upgrades and disk growth are somebody else's job. Prefer it once the
+submissions in the database start mattering.
+
+Nothing in the application changes. Drizzle's Postgres dialect, `jsonb`, the
+partial unique index enforcing one owner, and the single-statement upserts the
+rate limiter and idempotency depend on all work exactly as they do locally.
+Only `DATABASE_URL` moves.
+
+Two things to check before you choose it:
+
+- **OCI Database with PostgreSQL is not part of the Always Free tier** as far as
+  I can tell — Always Free covers compute, block storage and Autonomous
+  Database, which is Oracle's own engine, not Postgres. Read the cost estimate
+  in the console before you create one. If this is a development environment you
+  look at rather than a service other people depend on, the all-in-one shape
+  above is free and one command.
+- Put it in the **same VCN** on a private subnet, allow ingress on 5432 from
+  the compute instance's subnet CIDR only, and use `?sslmode=require` in the
+  URL — `verify-full` with `sslrootcert=` is better still, because it catches a
+  misdirected connection rather than merely encrypting one.
 
 ## Not covered here
 

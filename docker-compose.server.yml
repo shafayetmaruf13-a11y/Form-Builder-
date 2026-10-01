@@ -1,0 +1,101 @@
+# Formcraft on one machine, with nothing else to set up.
+#
+#   ./deploy/bootstrap.sh          # writes .env, then brings this up
+#
+# Everything the app needs runs here: Postgres, the migration step, the app
+# (with Chromium for PDF rendering), and Caddy terminating TLS. No managed
+# database, no domain name, no DNS records.
+#
+# This is the file for a real environment you want to look at and use —
+# a staging box, a demo URL, your own always-on instance.
+#
+# `docker-compose.prod.yml` is the other shape: the database lives in a managed
+# service and is somebody else's problem to back up. Prefer that one when the
+# submissions in it start mattering, because the trade-off here is explicit —
+# this file makes Postgres' durability yours. See §Backups in
+# docs/deploy-oracle-cloud.md for the one command that addresses it.
+
+name: formcraft
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: formcraft
+      POSTGRES_DB: formcraft
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run ./deploy/bootstrap.sh to generate .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Deliberately no `ports:`. Published, it would be a Postgres on the public
+    # internet with a password as its only defence — and the instance firewall
+    # is not what should be standing between a stranger and every submission.
+    # The app reaches it over the compose network by service name.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U formcraft -d formcraft"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Applies migrations and settles who owns the workspace, then exits.
+  migrate:
+    build:
+      context: .
+      target: migrator
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgres://formcraft:${POSTGRES_PASSWORD}@postgres:5432/formcraft
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      target: runner
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgres://formcraft:${POSTGRES_PASSWORD}@postgres:5432/formcraft
+      # Inside the container, where the PDF worker fetches its own pages.
+      RENDER_ORIGIN: http://127.0.0.1:3000
+      UPLOADS_DIR: /data/uploads
+      # Auth.js decides where a sign-in link points from the Host header, so
+      # behind a proxy it must be told explicitly to trust it.
+      AUTH_TRUST_HOST: "true"
+    volumes:
+      # Logos and uploaded file answers. Without this they vanish on redeploy.
+      - uploads:/data/uploads
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    # Chromium is the memory-hungry part: each render is a browser page. This
+    # keeps a runaway render from taking the host down with it.
+    mem_limit: 2g
+    # Chromium's own sandbox needs privileges a container does not grant, and
+    # it is launched with --no-sandbox; this gives it the shared memory it
+    # would otherwise crash without on a default 64MB /dev/shm.
+    shm_size: 512m
+    expose: ["3000"]
+
+  proxy:
+    image: caddy:2-alpine
+    depends_on: [app]
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      FORMCRAFT_DOMAIN: ${FORMCRAFT_DOMAIN:?run ./deploy/bootstrap.sh to generate .env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  pgdata:
+  uploads:
+  caddy-data:
+  caddy-config:

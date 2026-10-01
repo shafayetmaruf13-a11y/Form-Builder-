@@ -8,8 +8,13 @@
 #
 # The database is *not* here on purpose. Running Postgres in a container beside
 # the app means its durability is now your problem — backups, restores, upgrades
-# and whatever happens when the host disk fills. OCI's managed PostgreSQL does
-# that, and the whole data layer stays as it is; see docs/deploy-oracle-cloud.md.
+# and whatever happens when the host disk fills. A managed PostgreSQL does that,
+# and the whole data layer stays as it is; see docs/deploy-oracle-cloud.md.
+#
+# For an environment you want to look at and use rather than depend on, prefer
+# `docker-compose.server.yml`: it runs Postgres here, needs no managed service
+# and no domain name, and `./deploy/bootstrap.sh` brings it up in one command.
+# That one makes the durability trade-off above; the runbook has the backups.
 
 name: formcraft
 

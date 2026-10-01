@@ -55,6 +55,16 @@ WORKDIR /repo
 
 COPY . .
 
+# Set here rather than left to a compose file, because getting it wrong locks
+# the workspace. This stage inherits from `deps`, which does not set it, so
+# without this line the migration script takes itself for development and
+# seeds `dev@formcraft.local` as owner — handing a real deployment to an
+# address at a domain that does not exist, after which the sign-in gate
+# refuses every genuine address as uninvited and nobody can issue an
+# invitation. It is safe this late: dev dependencies were installed in `deps`,
+# so `tsx` and drizzle-kit are already present.
+ENV NODE_ENV=production
+
 # Idempotent by construction: drizzle records what it has applied, and CI
 # proves re-running is a no-op by doing it twice on every push.
 CMD ["pnpm", "--filter", "web", "db:migrate"]

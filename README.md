@@ -71,8 +71,9 @@ having its own, so the canvas shows exactly what the PDF will.
 The library and builder need the database; `/` does not. Edits autosave about a
 second after you stop, and the toolbar says when they landed — if it says
 otherwise, believe it. Uploaded images go to `.uploads/` on disk and are served
-from `/api/uploads/<key>`; Slice 6 swaps that for Cloudflare R2 without touching
-any stored document.
+from `/api/uploads/<key>`. That is still the only storage implementation —
+`lib/storage` is an interface precisely so moving to Cloudflare R2 changes one
+file and no stored document, but it has not been moved yet.
 
 ### Trying the fill flow
 
@@ -132,17 +133,32 @@ which.
 
 ## Deploying
 
-[docs/deploy-oracle-cloud.md](./docs/deploy-oracle-cloud.md) is the runbook: a
-compute instance running the app and Caddy, talking to OCI's managed
-PostgreSQL. The application does not change — only `DATABASE_URL`.
+On a fresh Ubuntu VM with ports 80 and 443 open:
 
 ```bash
-cp .env.production.example .env.production   # then fill it in
-docker compose -f docker-compose.prod.yml up -d --build
+./deploy/bootstrap.sh you@example.com
 ```
 
-Migrations run automatically before the app starts. **You run the deploy** —
-nothing here holds cloud credentials, and nothing in this repo touches DNS.
+That generates the secrets, finds the machine's public IP and brings up
+Postgres, the app and Caddy — then prints the URL, with a real certificate.
+**No domain name and no DNS records:** `<ip-with-dashes>.sslip.io` resolves to
+that IP from public DNS, which is all Let's Encrypt needs. Use
+`--host forms.example.com` once you have a domain pointing at the machine.
+
+[docs/deploy-oracle-cloud.md](./docs/deploy-oracle-cloud.md) is the runbook —
+read §2 before anything else, because two firewalls have to allow the traffic
+and only one of them is in the Oracle console.
+
+Two shapes, both running the same app:
+
+| File                        | Database                              | For                                                   |
+| --------------------------- | ------------------------------------- | ----------------------------------------------------- |
+| `docker-compose.server.yml` | a Postgres container, on the instance | an environment you look at and use; free, one command |
+| `docker-compose.prod.yml`   | a managed service, via `DATABASE_URL` | once the submissions in it start mattering            |
+
+The first one makes Postgres' durability yours — the runbook has the two backup
+commands that address it. **You run the deploy**: nothing here holds cloud
+credentials, and nothing in this repo touches DNS.
 
 ## Requirements
 
@@ -217,7 +233,7 @@ apps/web/
   src/server/auth/             permissions (pure), session, guards
   src/server/forms/            queries and mutations, permission-checked
   src/server/members/          member management
-  src/lib/storage/             object storage (local disk; R2 at Slice 6)
+  src/lib/storage/             object storage (local disk behind an interface)
   src/db/                      Drizzle schema, client, migrations, migrate script
 packages/schema/               the form document schema and pure document
                                operations — shared by builder, renderer, PDF
@@ -280,6 +296,14 @@ the dev server's console** — paste it into the browser. Alternatively set
 `AUTH_DEV_BYPASS=true` to be signed in as the seeded dev user; it is refused in
 production whatever its value.
 
-The seeded dev user (`pnpm db:migrate`) is the workspace owner. On a real
-deployment, the first account to sign in claims the workspace; after that,
-only invited addresses can get in.
+The seeded dev user (`pnpm db:migrate`) is the workspace owner — in
+development only. `db:migrate` never seeds it when `NODE_ENV=production`,
+because handing a real deployment to an address at a domain that does not exist
+locks the workspace: the gate then refuses every genuine address as uninvited
+and nobody is left who can issue an invitation.
+
+On a deployment, set `FORMCRAFT_OWNER_EMAIL` and that address owns the
+workspace — applied on the first migration only, since ownership moves by
+transfer and nowhere else. Leave it unset and the workspace is ownerless, to be
+claimed by the first address to sign in. After that, only invited addresses can
+get in.
