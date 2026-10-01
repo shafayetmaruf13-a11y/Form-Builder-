@@ -575,6 +575,28 @@ decided and why.
   configured from here.** The brief's instruction, and the right one:
   publishing SPF, DKIM or DMARC changes the public identity of a domain, with
   consequences for mail that has nothing to do with this app.
+- **2026-10-01 — The CDP harness is now a committed Playwright suite.** Four
+  slices' worth of verification lived in throwaway scripts in `/tmp`, which
+  meant re-checking by hand every time. `apps/web/e2e` holds 41 assertions on
+  the invariants unit tests cannot reach — rule 2's coordinates, rule 4's
+  immutability, rule 5's refusals, rule 6's slugs and limits — and runs as its
+  own CI job.
+- **2026-10-01 — The e2e suite runs a production build and signs in with a
+  real session row.** `next dev` reloads whenever its HMR socket reconnects,
+  which silently undid every navigation; and dev's compile-on-demand makes a
+  latency assertion measure the compiler. Production means `AUTH_DEV_BYPASS` is
+  refused — correctly — so the setup inserts a `sessions` row and its cookie,
+  which exercises the real path rather than a bypass.
+- **2026-10-01 — The suite owns its server (`reuseExistingServer: false`).**
+  It depends on a render origin and a webhook secret passed as env; a server
+  somebody left on that port has neither, and the failure is invisible — PDFs
+  500 against the wrong port and every signed webhook returns 401. Diagnosing
+  that cost more than never reusing ever will.
+- **2026-10-01 — Tests wait for hydration before clicking.** `load` is not
+  enough: the markup is there and the control looks normal, but React has not
+  attached its handlers, so the click vanishes without a trace. Two separate
+  failures came from this, one of which looked convincingly like a broken
+  redirect in the app.
 - **2026-09-30 — A file answer prints as its filename.** The bytes cannot be
   drawn into an A4 box, and silently omitting an attached document would
   misrepresent the submission. Naming it says what was sent without pretending

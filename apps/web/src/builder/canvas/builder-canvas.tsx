@@ -34,6 +34,9 @@ export function BuilderCanvas({
   return (
     <div
       ref={setNodeRef}
+      // The page strip draws the same document as thumbnails, so an element id
+      // alone matches twice. This marks which one is the canvas.
+      data-testid="builder-canvas"
       className="flex min-h-full items-start justify-center bg-neutral-200 p-10 dark:bg-neutral-800"
     >
       <div

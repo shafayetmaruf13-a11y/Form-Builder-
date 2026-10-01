@@ -169,7 +169,8 @@ create database formcraft owner formcraft;
 | `pnpm build`       | Production build (fails on type errors)      |
 | `pnpm lint`        | ESLint across the workspace                  |
 | `pnpm typecheck`   | `tsc --noEmit` across the workspace          |
-| `pnpm test`        | Vitest                                       |
+| `pnpm test`        | Vitest (unit)                                |
+| `pnpm test:e2e`    | Playwright (end-to-end, from `apps/web`)     |
 | `pnpm format`      | Prettier write (`format:check` to verify)    |
 | `pnpm db:up`       | Start Postgres (`db:down` to stop)           |
 | `pnpm db:generate` | Generate a migration from `src/db/schema.ts` |
@@ -197,6 +198,7 @@ apps/web/
   src/server/pdf/              browser, renderer, object keys, render token
   src/server/excel/            workbooks, sheet names, export access
   src/server/email/            one transport, messages, webhook signatures
+  e2e/                         Playwright: the architectural invariants
   src/auth.ts                  Auth.js configuration
   src/server/auth/             permissions (pure), session, guards
   src/server/forms/            queries and mutations, permission-checked

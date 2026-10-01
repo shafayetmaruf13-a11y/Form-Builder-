@@ -20,3 +20,10 @@ Thumbs.db
 
 # Local object storage for development uploads
 .uploads/
+
+# Playwright
+/apps/web/test-results/
+/apps/web/playwright-report/
+/apps/web/blob-report/
+/apps/web/e2e/.seed.json
+/apps/web/e2e/.auth.json
