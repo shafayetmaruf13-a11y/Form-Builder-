@@ -597,6 +597,27 @@ decided and why.
   attached its handlers, so the click vanishes without a trace. Two separate
   failures came from this, one of which looked convincingly like a broken
   redirect in the app.
+- **2026-10-01 — Deployment is a container on an OCI compute instance, with
+  the database managed.** Owner's constraint is the cloud, not the engine, so
+  nothing in the data layer moves: Postgres via Drizzle exactly as the stack
+  fixes it, and only `DATABASE_URL` changes. Running Postgres in a container
+  beside the app would make its durability the owner's problem for no benefit.
+- **2026-10-01 — `output: "standalone"` with `outputFileTracingRoot` at the
+  workspace root.** Without the root, tracing misses `@formcraft/schema` and
+  the image starts without the one package every other part derives from.
+- **2026-10-01 — `browsers.json` is force-included in the trace.** Playwright
+  reads it at runtime rather than importing it, so tracing cannot see it. The
+  standalone build started, served pages and exported Excel, then failed every
+  PDF with "Cannot find module browsers.json" — a failure that looks like a
+  healthy deploy until somebody downloads a response. Found by running the
+  traced output, which is the only way to find it without Docker.
+- **2026-10-01 — Caddy rather than nginx plus certbot.** It obtains and renews
+  TLS from the domain name alone. Renewal is the part that silently stops
+  working, and this is maintained solo.
+- **2026-10-01 — Uploads are a Docker volume and this is a known weakness.**
+  `lib/storage` still has only the local-disk implementation, so a container's
+  filesystem is the store. `docker compose down -v` destroys them. Documented
+  with a backup command rather than left to be discovered.
 - **2026-09-30 — A file answer prints as its filename.** The bytes cannot be
   drawn into an A4 box, and silently omitting an attached document would
   misrepresent the submission. Naming it says what was sent without pretending

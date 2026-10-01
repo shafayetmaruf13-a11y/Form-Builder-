@@ -130,6 +130,20 @@ with its header tinted to say it is no longer asked. A row is blank in any
 column its own version never had; the **Version** column is what tells you
 which.
 
+## Deploying
+
+[docs/deploy-oracle-cloud.md](./docs/deploy-oracle-cloud.md) is the runbook: a
+compute instance running the app and Caddy, talking to OCI's managed
+PostgreSQL. The application does not change — only `DATABASE_URL`.
+
+```bash
+cp .env.production.example .env.production   # then fill it in
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+Migrations run automatically before the app starts. **You run the deploy** —
+nothing here holds cloud credentials, and nothing in this repo touches DNS.
+
 ## Requirements
 
 - Node 22+

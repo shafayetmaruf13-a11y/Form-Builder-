@@ -1,0 +1,34 @@
+# Everything the build does not need, and a few things it must never receive.
+#
+# .env first: it holds AUTH_SECRET and would otherwise be baked into an image
+# layer, where deleting it later does not remove it.
+**/.env
+**/.env.*
+!**/.env.example
+
+node_modules
+**/node_modules
+.next
+**/.next
+**/dist
+**/build
+
+.git
+.github
+**/.gitignore
+
+# Uploaded files are a runtime volume, not image content.
+.uploads
+**/.uploads
+
+# Test output
+**/test-results
+**/playwright-report
+**/blob-report
+**/e2e/.seed.json
+**/e2e/.auth.json
+
+**/*.log
+**/.DS_Store
+**/.vscode
+**/.idea

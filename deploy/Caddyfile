@@ -1,0 +1,46 @@
+# Caddy obtains and renews the certificate from the domain name alone, so
+# there is no certbot timer to notice has stopped working.
+
+{$FORMCRAFT_DOMAIN} {
+	encode zstd gzip
+
+	# The public fill page takes uploaded file answers, and a signature is a
+	# PNG data URL inside a JSON body. Next's own limits still apply; this is
+	# the proxy not being the thing that rejects a legitimate submission.
+	request_body {
+		max_size 25MB
+	}
+
+	reverse_proxy app:3000 {
+		# Auth.js builds sign-in links from these, and the app refuses an
+		# unknown host in production unless AUTH_TRUST_HOST is set.
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+
+		# The first PDF download for a submission launches a browser and renders
+		# it, which takes seconds rather than milliseconds. The default response
+		# timeout would cut that off and show a gateway error for a request that
+		# was working perfectly well.
+		transport http {
+			response_header_timeout 120s
+		}
+	}
+
+	header {
+		# HSTS. Remove `preload` unless you intend to submit the domain — it
+		# is effectively irreversible once accepted.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# A fill page is a form somebody types personal data into; it has no
+		# business being embedded or reached from somewhere unexpected.
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

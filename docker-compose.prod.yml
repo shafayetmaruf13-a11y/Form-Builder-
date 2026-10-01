@@ -1,0 +1,75 @@
+# Formcraft in production, on one machine.
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Deliberately small: one app container, one reverse proxy, and a managed
+# Postgres somewhere else. A solo-maintained app is better served by something
+# that fits on a page than by an orchestrator.
+#
+# The database is *not* here on purpose. Running Postgres in a container beside
+# the app means its durability is now your problem — backups, restores, upgrades
+# and whatever happens when the host disk fills. OCI's managed PostgreSQL does
+# that, and the whole data layer stays as it is; see docs/deploy-oracle-cloud.md.
+
+name: formcraft
+
+services:
+  # Applies migrations, then exits. The app waits for it to finish.
+  migrate:
+    build:
+      context: .
+      target: migrator
+    env_file: [.env.production]
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      target: runner
+    env_file: [.env.production]
+    environment:
+      # Inside the container, where the PDF worker fetches its own pages.
+      RENDER_ORIGIN: http://127.0.0.1:3000
+      UPLOADS_DIR: /data/uploads
+      # Auth.js decides where a sign-in link points from the Host header, so
+      # behind a proxy it must be told explicitly to trust it.
+      AUTH_TRUST_HOST: "true"
+    volumes:
+      # Logos and uploaded file answers. Without this they vanish on redeploy.
+      - uploads:/data/uploads
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    # Chromium is the memory-hungry part: each render is a browser page. This
+    # keeps a runaway render from taking the host down with it.
+    mem_limit: 2g
+    # Chromium's own sandbox needs privileges a container does not grant, and
+    # it is launched with --no-sandbox; this gives it the shared memory it
+    # would otherwise crash without on a default 64MB /dev/shm.
+    shm_size: 512m
+    expose: ["3000"]
+
+  # Caddy rather than nginx: it obtains and renews TLS certificates by itself
+  # from the domain name alone. nginx plus certbot is three more moving parts
+  # for the same result, and renewal is the part that silently stops working.
+  proxy:
+    image: caddy:2-alpine
+    depends_on: [app]
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      # Set in .env.production. Caddy needs the real hostname to get a cert.
+      FORMCRAFT_DOMAIN: ${FORMCRAFT_DOMAIN:?set FORMCRAFT_DOMAIN in .env.production}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  uploads:
+  caddy-data:
+  caddy-config:

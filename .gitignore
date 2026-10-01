@@ -7,10 +7,11 @@ build/
 next-env.d.ts
 *.tsbuildinfo
 
-# Secrets — .env.example is the committed template, .env never is.
+# Secrets — the *.example templates are committed, the filled-in files never.
 .env
 .env.*
 !.env.example
+!.env.production.example
 
 *.log
 .DS_Store
