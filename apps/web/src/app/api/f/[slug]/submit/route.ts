@@ -1,12 +1,13 @@
 import { answersSchema, validateAnswers } from "@formcraft/schema";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { type NextRequest, NextResponse } from "next/server";
+import { after, type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/db";
 import { submissions } from "@/db/schema";
 
+import { notifyOwnerOfSubmission } from "@/server/email/notify";
 import { claimUse, openLink } from "@/server/publish/queries";
 import { clientIp, hit } from "@/server/publish/rate-limit";
 import { verifyTurnstile } from "@/server/publish/turnstile";
@@ -161,6 +162,12 @@ export async function POST(
       { status: 200 },
     );
   }
+
+  // After the response, never before it. Notifying the owner means rendering a
+  // PDF, which means launching Chromium — and Slice 6's rule is that the one
+  // endpoint strangers can reach never waits on a browser. The person filling
+  // the form sees "thank you" immediately; the email follows.
+  after(() => notifyOwnerOfSubmission(id));
 
   return NextResponse.json({ id, duplicate: false }, { status: 201 });
 }

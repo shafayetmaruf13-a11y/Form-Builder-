@@ -70,6 +70,8 @@ export interface StoredForm {
   ownerId: string;
   updatedAt: Date;
   document: FormDocument;
+  /** Whether this form emails its owner on each new response. */
+  notifyOnSubmission: boolean;
 }
 
 /** One form, or null if it does not exist or the caller may not see it. */
@@ -92,6 +94,7 @@ export async function getForm(id: string): Promise<StoredForm | null> {
     ownerId: row.ownerId,
     updatedAt: row.updatedAt,
     document: parsed.data,
+    notifyOnSubmission: row.notifyOnSubmission,
   };
 }
 

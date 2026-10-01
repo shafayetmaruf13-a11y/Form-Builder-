@@ -526,6 +526,55 @@ decided and why.
   workbook, exactly as from its PDF** — the question was never asked, so a
   blank beside it would claim it went unanswered. The all-submissions sheet
   cannot do this, since a column must exist if any row answered it.
+- **2026-10-01 — One transport for every email, and every send is logged.**
+  Slice 4 posted sign-in links to Resend inline and logged nothing, which made
+  the one email this app already sent the one email nobody could account for.
+  Everything now goes through `server/email/transport.ts` and lands in
+  `email_log`, so "did they get it?" has an answer that does not depend on
+  asking Resend.
+- **2026-10-01 — `api.resend.com` is refused by this container's network
+  policy,** like Cloudflare's and Clerk's domains. Unset `RESEND_API_KEY`
+  prints the message and records it as `logged` — a status deliberately
+  distinct from `sent`, so a log full of them is never mistaken for delivered
+  mail. This is how the flow is exercised here; it is not a stub that pretends
+  to succeed.
+- **2026-10-01 — The submission email is sent from `after()`, never before the
+  response.** Notifying means rendering a PDF, which means launching Chromium,
+  and Slice 6's rule is that the one endpoint strangers can reach never waits
+  on a browser. Measured: 37–47ms to respond, against about a second to
+  render.
+- **2026-10-01 — Notifications are a per-form toggle, default on.** Owner's
+  call. The brief says "PDF to the owner on submission"; unconditional, a form
+  taking two hundred responses a day would be unusable with no remedy but
+  unpublishing it.
+- **2026-10-01 — A failed email never fails the thing that caused it.**
+  `sendEmail` does not throw: a submission is accepted whether or not the
+  owner's mail server is reachable, and the `email_log` row is what says which
+  happened. The one exception is the sign-in link, where Auth.js would
+  otherwise show "check your email" for a message nothing sent.
+- **2026-10-01 — Webhook signatures are verified in-repo rather than with the
+  `svix` package,** which is not in the stack table. The scheme is one HMAC
+  over `id.timestamp.body` and is worth having under test either way. With no
+  `RESEND_WEBHOOK_SECRET` the endpoint rejects everything: it is public, so one
+  that accepted everything would let anyone mark an owner's address as bounced
+  and silently stop their notifications.
+- **2026-10-01 — Webhook events only ever move a status forward.** They arrive
+  out of order — `delivered` can land before `sent` — so a later event wins
+  only if it says more than what is recorded. Otherwise a stray `sent` would
+  overwrite a `bounced` and the log would claim an address works when it does
+  not.
+- **2026-10-01 — Forwarding a response is treated as a spam relay, because
+  that is its shape.** Permission-checked, one recipient per call, rate limited
+  at 20/hour keyed on the _actor_ (keying on the recipient would let somebody
+  spray a thousand addresses once each), and every send logged. `reply_to` is
+  the sender's address, since nobody reads the sending domain's mailbox.
+- **2026-10-01 — Email bodies show option labels, not stored values** — the
+  same rule as the Excel export, for the same reason. Reading the first real
+  notification is what caught it: "Country: gb" reads like a bug.
+- **2026-10-01 — DNS records are documented in `docs/email-dns.md` and never
+  configured from here.** The brief's instruction, and the right one:
+  publishing SPF, DKIM or DMARC changes the public identity of a domain, with
+  consequences for mail that has nothing to do with this app.
 - **2026-09-30 — A file answer prints as its filename.** The bytes cannot be
   drawn into an A4 box, and silently omitting an attached document would
   misrepresent the submission. Naming it says what was sent without pretending

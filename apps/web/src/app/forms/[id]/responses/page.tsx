@@ -12,6 +12,7 @@ import {
   listVersions,
 } from "@/server/publish/queries";
 
+import { EmailSubmissionButton, NotifyToggle } from "./email-controls";
 import { LinkControls } from "./link-controls";
 
 export const dynamic = "force-dynamic";
@@ -124,14 +125,17 @@ export default async function ResponsesPage({
             Responses
           </h2>
 
-          {submissions.length > 0 && (
-            <a
-              href={`/api/forms/${id}/xlsx`}
-              className="rounded border border-black/10 px-3 py-1 text-xs hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
-            >
-              Download all as Excel
-            </a>
-          )}
+          <div className="flex items-center gap-4">
+            <NotifyToggle formId={id} initial={form.notifyOnSubmission} />
+            {submissions.length > 0 && (
+              <a
+                href={`/api/forms/${id}/xlsx`}
+                className="rounded border border-black/10 px-3 py-1 text-xs hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
+              >
+                Download all as Excel
+              </a>
+            )}
+          </div>
         </div>
 
         {submissions.length === 0 ? (
@@ -217,6 +221,10 @@ export default async function ResponsesPage({
                         >
                           Excel
                         </a>
+                        <span aria-hidden="true" className="px-1 opacity-30">
+                          ·
+                        </span>
+                        <EmailSubmissionButton submissionId={submission.id} />
                       </td>
                     </tr>
                   );

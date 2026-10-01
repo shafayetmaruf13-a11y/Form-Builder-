@@ -5,6 +5,8 @@ import Resend from "next-auth/providers/resend";
 
 import { db } from "@/db";
 import { accounts, sessions, users, verificationTokens } from "@/db/schema";
+import { signInMessage } from "@/server/email/messages";
+import { sendEmail } from "@/server/email/transport";
 
 /**
  * Authentication.
@@ -64,36 +66,35 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       from: process.env.EMAIL_FROM ?? "Formcraft <onboarding@resend.dev>",
 
       /**
-       * In development, print the link instead of sending it.
+       * Sign-in links go through the same transport as everything else.
        *
-       * Without this there is no way to sign in locally without a Resend
-       * account and a verified domain, which would make the whole of this
-       * slice unrunnable on a laptop.
+       * Slice 4 posted to Resend here directly and logged nothing, which made
+       * the one email the app already sent the one email nobody could account
+       * for. Now it lands in `email_log` beside the rest, and the console
+       * fallback for a machine with no Resend key is the transport's, not a
+       * second one written here.
+       *
+       * The link is still printed separately: a magic link is the one thing
+       * that is useless unless you can click it, and the transport's log line
+       * deliberately shows only the text body.
        */
       async sendVerificationRequest(params) {
         if (!canSendEmail) {
           console.log(
             `\n  Sign-in link for ${params.identifier}:\n  ${params.url}\n`,
           );
-          return;
         }
 
-        const response = await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            from: params.provider.from,
-            to: params.identifier,
-            subject: "Your Formcraft sign-in link",
-            text: `Sign in to Formcraft:\n\n${params.url}\n\nThis link expires in 24 hours. If you did not request it, ignore this email.`,
-          }),
+        const outcome = await sendEmail({
+          to: params.identifier,
+          message: signInMessage(params.url),
         });
 
-        if (!response.ok) {
-          throw new Error(`Resend refused the message: ${response.status}`);
+        // Auth.js shows the "check your email" page unless this throws, and
+        // telling somebody to check an inbox nothing was sent to is worse than
+        // an error. A console-only send still counts as delivered.
+        if (!outcome.ok) {
+          throw new Error(`Could not send the sign-in link: ${outcome.error}`);
         }
       },
     }),

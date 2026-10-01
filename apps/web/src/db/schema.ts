@@ -177,6 +177,14 @@ export const forms = pgTable(
     thumbnailKey: text("thumbnail_key"),
     /** The working copy. Validated by @formcraft/schema, not by the database. */
     draftDocument: jsonb("draft_document").notNull(),
+    /**
+     * Email the owner each time this form is filled in.
+     *
+     * On by default, which is the brief's behaviour; a switch exists because a
+     * form taking two hundred responses a day would otherwise be unusable and
+     * the only remedy would be unpublishing it.
+     */
+    notifyOnSubmission: boolean("notify_on_submission").notNull().default(true),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

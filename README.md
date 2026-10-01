@@ -10,6 +10,14 @@ build plan. Read it before changing anything structural.
 
 ## Status
 
+**Slice 8 — email.** New responses are emailed to the form's owner with the
+PDF attached, controlled by a per-form switch on the responses page. Any
+response can be emailed on to a typed address. Every send — including sign-in
+links — is recorded in `email_log`, and Resend's bounce and delivery webhooks
+update it. The SPF, DKIM and DMARC records are written up in
+[docs/email-dns.md](./docs/email-dns.md) **for you to add**; nothing here
+touches DNS.
+
 **Slice 7 — Excel.** Every response downloads as a workbook, and a whole
 form's responses download as one sheet — a row each, a column per question,
 with the header frozen and a filter on every column. Dates, numbers and
@@ -46,7 +54,7 @@ and a page strip: drag to create, move, resize, rotate, multi-select, marquee,
 restack, nudge, duplicate, copy/paste, snap to a grid and to neighbours, zoom
 and pan, edit every property, manage pages, upload a logo — all undoable.
 
-Next is Slice 8: emailing the PDF to the owner on submission.
+That is the whole of the build plan. Slices 0 to 8 are done.
 
 Behind it: `packages/schema` defines what a form document is (Slice 1), and
 `<FormRenderer />` draws one — the builder reuses that renderer rather than
@@ -88,6 +96,26 @@ the fields are, because it is the same renderer at the same coordinates.
 Rendering needs a Chromium binary. In development set
 `CHROMIUM_EXECUTABLE_PATH` if Playwright did not download one itself; the dev
 container ships one at `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`.
+
+### Email
+
+Nothing needs configuring to try it. With no `RESEND_API_KEY` the message is
+printed to the dev server's console and recorded in `email_log` with status
+`logged` — deliberately not `sent`, so a log full of them is never mistaken
+for delivered mail.
+
+Submit a response and watch the terminal: the owner's notification appears a
+second or so later, with the PDF attached. The submission itself returns in
+about 40ms, because the email happens after the response rather than in front
+of it.
+
+**Email** beside a response forwards it to an address you type, with the PDF
+attached and replies addressed to you. The checkbox above the table turns
+per-response notifications off for that form.
+
+To send real mail, set `RESEND_API_KEY` and `EMAIL_FROM`, and follow
+[docs/email-dns.md](./docs/email-dns.md) for the DNS records — which are yours
+to add, not this app's.
 
 ### Getting a spreadsheet
 
@@ -168,6 +196,7 @@ apps/web/
   src/server/publish/          slugs, publish checks, link lookup, rate limiting
   src/server/pdf/              browser, renderer, object keys, render token
   src/server/excel/            workbooks, sheet names, export access
+  src/server/email/            one transport, messages, webhook signatures
   src/auth.ts                  Auth.js configuration
   src/server/auth/             permissions (pure), session, guards
   src/server/forms/            queries and mutations, permission-checked
